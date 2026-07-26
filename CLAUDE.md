@@ -12,7 +12,7 @@ explicarle qué es Web Mercator ni qué es el RSSI.
 ## Órdenes
 
 ```bash
-python3 pruebas.py               # 69 comprobaciones con GPS simulado
+python3 pruebas.py               # 70 comprobaciones con GPS simulado
 python3 pruebas.py --capturas    # además deja pantallazos en capturas/
 python3 pruebas.py --ver         # con navegador visible, para depurar
 python3 mapa.py <sur> <oeste> <norte> <este> --salida <archivo>   # imagen + esquinas
@@ -99,7 +99,9 @@ GPS no los necesita (GNSS solo recibe) pero la web sí, de ahí el service
 worker. Nada de CDN, fuentes remotas ni llamadas a API en tiempo de ejecución.
 
 **El público son un niño de 6 y otro de 10.** El de 6 se guía por el frío/
-caliente y el sonido, no lee. Nada esencial puede depender de leer texto.
+caliente y el sonido, no lee. Nada esencial puede depender de leer texto: por eso
+el aviso de estar encima no es sólo el cambio de `#pistaTitulo`, sino la clase
+`body.encima`, que enciende el borde del instrumento y hace latir el número.
 
 **Cada móvil lleva su partida, y se pone al día solo.** No hay sincronización
 —sin backend haría falta QR, y `BarcodeDetector` no existe en Safari— así que

@@ -229,6 +229,10 @@ def main():
         comprobar("ESTÁIS" in pg.inner_text("#pistaTitulo").upper(),
                   "salta el aviso de estar encima",
                   pg.inner_text("#pistaTitulo"))
+        # El de 6 no lee: el aviso tiene que verse sin leer nada.
+        comprobar("encima" in pg.eval_on_selector("body", "e => e.className"),
+                  "y el instrumento lo enseña sin depender del texto",
+                  pg.eval_on_selector("body", "e => e.className"))
 
         # ── 3 · alineación niebla / mapa ────────────────────────────────
         # Esta es la que pilló el fallo del object-fit: si la proyección se

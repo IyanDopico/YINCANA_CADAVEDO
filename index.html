@@ -112,6 +112,18 @@ footer{
   color:var(--hueso); transition:color .5s;
 }
 .distancia.cerca{color:var(--caliente)}
+/* El de 6 años no lee: cuando están encima, el instrumento entero lo dice sin
+   una sola palabra. El borde se enciende y el número late. */
+body.encima footer{
+  border-top-color:var(--caliente);
+  animation:latir 1.15s ease-in-out infinite;
+}
+/* Late el resplandor, no el número: la cifra tiene que seguir leyéndose a
+   pleno sol justo en el momento en que importa. */
+@keyframes latir{
+  0%,100%{box-shadow:0 -14px 36px -14px rgba(242,177,52,.62)}
+  50%    {box-shadow:0 -14px 28px -18px rgba(242,177,52,.20)}
+}
 .unidad{font-family:var(--mono); font-size:15px; color:var(--hueso-tenue); margin-left:3px}
 .precision{
   font-family:var(--mono); font-size:11px; color:var(--hueso-tenue);
@@ -826,6 +838,11 @@ function refrescarInstrumento(){
   const est = estacionActiva();
   const elD = document.getElementById("dist");
   const elP = document.getElementById("prec");
+
+  // Se saca de la distancia y no de yaAvisado: así se apaga solo si se alejan,
+  // sin volver a disparar la alarma cada vez que entran y salen del radio.
+  document.body.classList.toggle("encima",
+    !!est && distActual != null && distActual <= CONFIG.radioZona);
 
   if (!est){
     elD.textContent = "✓"; elD.classList.remove("cerca");
