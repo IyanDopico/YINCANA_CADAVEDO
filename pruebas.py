@@ -583,7 +583,39 @@ def main():
                   "; ".join(err2[:2]))
         ctx2.close()
 
-        # ── 12 · sin errores por el camino ──────────────────────────────
+        # ── 12 · sin cobertura ──────────────────────────────────────────
+        # En el pueblo puede no haber datos. El GPS no los necesita, la web sí,
+        # y de eso va el service worker. Es la regla que más caro sale romper y
+        # hasta ahora no la comprobaba nadie.
+        print("\nSin cobertura")
+        pg.goto(f"{BASE}?reset")
+        pg.wait_for_timeout(700)
+        activo = pg.evaluate("""async () => {
+            if (!('serviceWorker' in navigator)) return "sin soporte";
+            const reg = await navigator.serviceWorker.ready;
+            return reg.active ? "activo" : "sin activar";
+        }""")
+        comprobar(activo == "activo", "el service worker queda activo", str(activo))
+
+        pg.wait_for_timeout(1200)          # que le dé tiempo a guardar la copia
+        ctx.set_offline(True)
+        try:
+            pg.goto(f"{BASE}?k={primera[0]}")
+            pg.wait_for_timeout(1200)
+            comprobar(pg.inner_text("#nombrePueblo").strip() not in ("—", ""),
+                      "la página carga sin datos",
+                      pg.inner_text("#nombrePueblo"))
+            comprobar(not pg.is_hidden("#capaLogro"),
+                      "y la etiqueta desbloquea igual sin cobertura")
+            comprobar(pg.evaluate(
+                "JSON.parse(localStorage.getItem('yincana.v1')).abiertas")
+                == [primera[0]], "y queda guardada")
+        except Exception as e:
+            comprobar(False, "la página carga sin datos", str(e)[:90])
+        finally:
+            ctx.set_offline(False)
+
+        # ── 13 · sin errores por el camino ──────────────────────────────
         print("\nConsola")
         comprobar(not errores, "ningún error de JavaScript", "; ".join(errores[:3]))
 

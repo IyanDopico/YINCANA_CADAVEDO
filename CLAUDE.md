@@ -12,7 +12,7 @@ explicarle qué es Web Mercator ni qué es el RSSI.
 ## Órdenes
 
 ```bash
-python3 pruebas.py               # 73 comprobaciones con GPS simulado
+python3 pruebas.py               # 77 comprobaciones con GPS simulado
 python3 pruebas.py --capturas    # además deja pantallazos en capturas/
 python3 pruebas.py --ver         # con navegador visible, para depurar
 python3 mapa.py <sur> <oeste> <norte> <este> --salida <archivo>   # imagen + esquinas
@@ -97,6 +97,8 @@ estado nuevo tiene que persistir o se pierde en la primera etiqueta.
 **Tiene que funcionar sin cobertura.** En el pueblo puede no haber datos. El
 GPS no los necesita (GNSS solo recibe) pero la web sí, de ahí el service
 worker. Nada de CDN, fuentes remotas ni llamadas a API en tiempo de ejecución.
+`pruebas.py` corta la red de verdad y comprueba que la página carga y que la
+etiqueta sigue desbloqueando: si tocas `sw.js`, esa es la que avisa.
 
 **El público son un niño de 6 y otro de 10.** El de 6 se guía por el frío/
 caliente y el sonido, no lee. Nada esencial puede depender de leer texto: por eso
