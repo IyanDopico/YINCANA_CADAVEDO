@@ -1,0 +1,975 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no">
+<meta name="theme-color" content="#0d151d">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>Expedición</title>
+<link rel="manifest" href="manifest.json">
+<style>
+/* ============================================================
+   PALETA
+   niebla-alta  #1b2733   territorio sin explorar
+   niebla-baja  #0d151d   fondo / chasis del instrumento
+   tinta        #243447   líneas y bordes del chasis
+   frio         #3d7d8f   lejos de la estación
+   caliente     #f2b134   encima de la estación
+   oro          #c8952f   medalla conseguida
+   hueso        #e8e0cf   texto sobre oscuro
+   ============================================================ */
+:root{
+  --niebla-alta:#1b2733;
+  --niebla-baja:#0d151d;
+  --tinta:#243447;
+  --frio:#3d7d8f;
+  --caliente:#f2b134;
+  --oro:#c8952f;
+  --hueso:#e8e0cf;
+  --hueso-tenue:#9aa7b0;
+
+  --serif: Georgia, 'Iowan Old Style', Palatino, 'Palatino Linotype', serif;
+  --mono: ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, monospace;
+  --sans: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+}
+*{box-sizing:border-box; -webkit-tap-highlight-color:transparent}
+html,body{height:100%; margin:0; overflow:hidden; overscroll-behavior:none}
+body{
+  background:var(--niebla-baja);
+  color:var(--hueso);
+  font-family:var(--sans);
+  display:flex; flex-direction:column;
+  padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+  user-select:none;
+}
+
+/* ---------- CABECERA ---------- */
+header{
+  flex:0 0 auto;
+  display:flex; align-items:baseline; justify-content:space-between;
+  gap:12px; padding:10px 16px 8px;
+  border-bottom:1px solid var(--tinta);
+}
+.rotulo{
+  font-family:var(--serif);
+  font-size:12px; letter-spacing:.28em; text-transform:uppercase;
+  color:var(--hueso-tenue);
+}
+.pueblo{
+  font-family:var(--serif); font-size:19px; letter-spacing:.02em;
+  color:var(--hueso); display:block; margin-top:2px; letter-spacing:.04em;
+}
+.medallero{display:flex; gap:6px; align-items:center; flex-shrink:0}
+.punto{
+  width:9px; height:9px; border-radius:50%;
+  border:1.5px solid var(--tinta); background:transparent;
+  transition:background .5s, border-color .5s, box-shadow .5s;
+}
+.punto.hecho{background:var(--oro); border-color:var(--oro); box-shadow:0 0 8px rgba(200,149,47,.65)}
+.punto.activo{border-color:var(--caliente)}
+
+/* ---------- MAPA ---------- */
+#lienzos{
+  flex:1 1 auto; position:relative; overflow:hidden;
+  /* Retícula de levantamiento: si todavía no hay imagen de mapa, al despejar
+     la niebla se ve esto en vez de un vacío negro. */
+  background:
+    repeating-linear-gradient(0deg,  transparent 0 39px, rgba(61,125,143,.17) 39px 40px),
+    repeating-linear-gradient(90deg, transparent 0 39px, rgba(61,125,143,.17) 39px 40px),
+    var(--niebla-baja);
+}
+#lienzos canvas, #lienzos img{
+  position:absolute; inset:0; width:100%; height:100%;
+  object-fit:contain;
+}
+#mapa{opacity:.92}
+#niebla{pointer-events:none}
+#hud{pointer-events:none}
+
+/* ---------- INSTRUMENTO ---------- */
+footer{
+  flex:0 0 auto; padding:12px 16px 16px;
+  border-top:1px solid var(--tinta);
+  background:linear-gradient(180deg, rgba(27,39,51,.5), var(--niebla-baja));
+}
+.barra{
+  height:5px; border-radius:3px; background:var(--tinta);
+  overflow:hidden; margin-bottom:12px;
+}
+.barra>i{
+  display:block; height:100%; width:0%;
+  background:linear-gradient(90deg,var(--frio),var(--caliente));
+  border-radius:3px; transition:width .45s cubic-bezier(.2,.7,.3,1);
+}
+.lectura{display:flex; align-items:flex-end; gap:14px; margin-bottom:10px}
+.distancia{
+  font-family:var(--mono); font-size:42px; font-weight:600;
+  line-height:.9; letter-spacing:-.02em;
+  font-variant-numeric:tabular-nums;
+  color:var(--hueso); transition:color .5s;
+}
+.distancia.cerca{color:var(--caliente)}
+.unidad{font-family:var(--mono); font-size:15px; color:var(--hueso-tenue); margin-left:3px}
+.precision{
+  font-family:var(--mono); font-size:11px; color:var(--hueso-tenue);
+  padding-bottom:5px; letter-spacing:.03em;
+}
+.pista{
+  font-family:var(--serif); font-size:16px; line-height:1.45;
+  color:var(--hueso); min-height:2.9em;
+}
+.pista .eyebrow{
+  display:block; font-family:var(--sans); font-size:10px;
+  letter-spacing:.22em; text-transform:uppercase;
+  color:var(--hueso-tenue); margin-bottom:5px;
+}
+
+/* ---------- CAPAS A PANTALLA COMPLETA ---------- */
+.capa{
+  position:fixed; inset:0; z-index:50;
+  background:var(--niebla-baja);
+  display:flex; flex-direction:column; align-items:center; justify-content:center;
+  gap:18px; padding:32px 26px; text-align:center;
+}
+.capa[hidden]{display:none}
+.capa h1{
+  font-family:var(--serif); font-weight:400;
+  font-size:31px; line-height:1.15; margin:0; letter-spacing:.01em;
+}
+.capa p{
+  font-family:var(--sans); font-size:15px; line-height:1.55;
+  color:var(--hueso-tenue); margin:0; max-width:30ch;
+}
+.boton{
+  font-family:var(--sans); font-size:16px; font-weight:600;
+  padding:15px 34px; border-radius:999px; border:none; cursor:pointer;
+  background:var(--caliente); color:#1a1206; letter-spacing:.01em;
+  touch-action:manipulation;
+}
+.boton.hueco{background:transparent; color:var(--hueso-tenue); border:1px solid var(--tinta)}
+
+.medalla{
+  font-size:76px; line-height:1;
+  animation:aterriza .55s cubic-bezier(.2,1.4,.4,1);
+}
+@keyframes aterriza{
+  0%{transform:scale(.2) rotate(-22deg); opacity:0}
+  100%{transform:scale(1) rotate(0); opacity:1}
+}
+.sello{
+  font-family:var(--sans); font-size:10px; letter-spacing:.24em;
+  text-transform:uppercase; color:var(--oro);
+}
+
+/* ---------- MODO AUTOR ---------- */
+#autor{
+  position:fixed; inset:0; z-index:60; background:var(--niebla-baja);
+  padding:18px 16px calc(18px + env(safe-area-inset-bottom));
+  overflow-y:auto; font-family:var(--mono); font-size:13px;
+}
+#autor[hidden]{display:none}
+#autor h2{font-family:var(--serif); font-size:20px; font-weight:400; margin:0 0 4px}
+#autor .aviso{color:var(--hueso-tenue); font-family:var(--sans); font-size:13px; margin:0 0 18px; line-height:1.5}
+.campo{
+  display:flex; justify-content:space-between; gap:10px;
+  padding:9px 0; border-bottom:1px solid var(--tinta);
+}
+.campo span:first-child{color:var(--hueso-tenue)}
+.campo b{font-weight:600; font-variant-numeric:tabular-nums}
+.bien{color:#7fc99a} .regular{color:var(--caliente)} .mal{color:#e07b6a}
+#autor input{
+  width:100%; margin:16px 0 10px; padding:12px 14px;
+  background:var(--niebla-alta); border:1px solid var(--tinta);
+  color:var(--hueso); border-radius:8px; font-family:var(--sans); font-size:15px;
+}
+#autor .fila{display:flex; gap:9px; margin-bottom:20px}
+#autor .fila .boton{flex:1; padding:13px 10px; font-size:14px}
+#autor pre{
+  background:var(--niebla-alta); border:1px solid var(--tinta); border-radius:8px;
+  padding:13px; font-size:11px; line-height:1.6; overflow-x:auto;
+  color:var(--hueso); white-space:pre-wrap; word-break:break-all; user-select:text;
+}
+.enlace{
+  display:block; margin-top:12px; text-align:center;
+  font-family:var(--sans); font-size:13px; color:var(--hueso-tenue);
+  text-decoration:underline; text-underline-offset:3px; cursor:pointer;
+}
+#demoBarra{
+  position:fixed; left:50%; transform:translateX(-50%); z-index:70;
+  bottom:calc(env(safe-area-inset-bottom) + 148px);
+  display:flex; align-items:center; gap:8px;
+  padding:7px 9px 7px 13px; border-radius:999px;
+  background:rgba(13,21,29,.9); border:1px solid var(--tinta);
+  backdrop-filter:blur(8px);
+}
+#demoBarra .sello{color:var(--frio); margin-right:2px}
+#demoBarra button{
+  font-family:var(--mono); font-size:12px; padding:6px 11px;
+  border-radius:999px; border:1px solid var(--tinta); cursor:pointer;
+  background:transparent; color:var(--hueso); touch-action:manipulation;
+}
+#demoBarra button:active{background:var(--tinta)}
+@media (prefers-reduced-motion:reduce){
+  *{animation-duration:.01ms !important; transition-duration:.01ms !important}
+}
+</style>
+</head>
+<body>
+
+<header>
+  <div>
+    <span class="rotulo">Expedición</span>
+    <span class="pueblo" id="nombrePueblo">—</span>
+  </div>
+  <div class="medallero" id="medallero"></div>
+</header>
+
+<div id="lienzos">
+  <img id="mapa" alt="">
+  <canvas id="niebla"></canvas>
+  <canvas id="hud"></canvas>
+</div>
+
+<footer>
+  <div class="barra"><i id="barraFill"></i></div>
+  <div class="lectura">
+    <div><span class="distancia" id="dist">···</span><span class="unidad">m</span></div>
+    <div class="precision" id="prec">buscando señal</div>
+  </div>
+  <div class="pista"><span class="eyebrow" id="pistaTitulo">Pista</span><span id="pistaTexto">…</span></div>
+</footer>
+
+<!-- Pantalla de arranque -->
+<div class="capa" id="capaInicio">
+  <h1 id="tituloInicio">La expedición<br>os espera</h1>
+  <p id="textoInicio">Al pulsar, el mapa se abrirá cubierto de niebla. Se irá despejando según caminéis.</p>
+  <button class="boton" id="btnEmpezar">Empezar expedición</button>
+</div>
+
+<!-- Pantalla de logro -->
+<div class="capa" id="capaLogro" hidden>
+  <div class="medalla" id="logroMedalla">🏺</div>
+  <span class="sello">Estación encontrada</span>
+  <h1 id="logroNombre">—</h1>
+  <p id="logroPista">—</p>
+  <button class="boton" id="btnSeguir">Seguir</button>
+</div>
+
+<!-- Modo autor -->
+<div id="autor" hidden>
+  <h2>Modo autor</h2>
+  <p class="aviso">Quédate quieto hasta que la precisión baje de 10 m, luego marca el punto. Cuanto más esperes, mejor sale.</p>
+  <div class="campo"><span>latitud</span><b id="aLat">—</b></div>
+  <div class="campo"><span>longitud</span><b id="aLon">—</b></div>
+  <div class="campo"><span>precisión</span><b id="aPrec">—</b></div>
+  <div class="campo"><span>lecturas</span><b id="aN">0</b></div>
+  <input id="aNombre" placeholder="Nombre del punto (ej. El lavadero)" autocomplete="off">
+  <div class="fila">
+    <button class="boton" id="aMarcar">Marcar punto</button>
+    <button class="boton hueco" id="aBorrar">Borrar todo</button>
+  </div>
+  <pre id="aSalida">Sin puntos marcados todavía.</pre>
+  <span class="enlace" id="aCopiar">Copiar al portapapeles</span>
+</div>
+
+<script>
+/* ══════════════════════════════════════════════════════════════
+   1 · CONFIGURACIÓN — esto es lo único que tienes que tocar
+   ══════════════════════════════════════════════════════════════ */
+const CONFIG = {
+  pueblo: "Cadavedo",
+
+  // Imagen del mapa. Si no carga, la app funciona igual sobre una retícula.
+  mapa: "mapa.jpg",
+
+  // OJO: recuadro ancho, elegido para que la DEMO enseñe toda la geografía
+  // (estación, núcleo y La Regalina). Para jugar de verdad conviene apretarlo
+  // al casco del pueblo: ver la nota en ARRANQUE.md sobre el tamaño del mapa.
+  esquinas: { norte: 43.5560, sur: 43.5420, oeste: -6.3940, este: -6.3700 },
+
+  radioNiebla: 35,   // m — cuánto despeja de mapa al caminar
+  radioZona:   25,   // m — a partir de aquí avisa de que están encima
+  radioAudio: 150,   // m — a partir de aquí empieza a pitar
+
+  // Por dónde empieza a caminar el muñeco de la demo.
+  inicioDemo: [43.5432, -6.3925],
+
+  // COORDENADAS SIN VERIFICAR EN CAMPO. Salen de OpenStreetMap y de fuentes
+  // públicas, con lo que valen para la demo pero no para jugar: apuntan al
+  // sitio aproximado, no a donde vayas a esconder la etiqueta. Sustitúyelas
+  // por las que captures tú con ?modo=autor.
+  estaciones: [
+    { k:"a7f3c1", nombre:"El apeadero", lat:43.54295, lon:-6.39163, medalla:"🚂",
+      pista:"Empezamos donde para el tren de vía estrecha. Desde aquí, subid al pueblo: buscad el sitio con más hórreos juntos, esos graneros de madera subidos a cuatro patas. En Cadavedo hay casi cien." },
+
+    { k:"b2e9d4", nombre:"Los hórreos",  lat:43.54978, lon:-6.38623, medalla:"🌽",
+      pista:"Ahora hacia el mar, al borde del acantilado. Hay una capilla pequeña, pintada de blanco y azul, con dos hórreos al lado y ochenta metros de caída hasta el agua." },
+
+    { k:"c8a05f", nombre:"La Regalina",  lat:43.55459, lon:-6.37296, medalla:"⛪",
+      pista:"" },
+  ],
+
+  finalTitulo: "El tesoro es vuestro",
+  finalTexto:  "Habéis cruzado Cadavedo de punta a punta, desde el tren hasta el acantilado. El tesoro está donde el Padre Galo montó la fiesta: mirad debajo del hórreo de la derecha.",
+};
+
+/* ══════════════════════════════════════════════════════════════
+   2 · ESTADO PERSISTENTE
+   ══════════════════════════════════════════════════════════════ */
+const params  = new URLSearchParams(location.search);
+const esAutor = params.get("modo") === "autor";
+const esDemo  = params.has("demo");
+
+// La demo guarda aparte para no pisar la partida de verdad.
+const CLAVE = esDemo ? "yincana.demo" : "yincana.v1";
+let mem = null; // respaldo si localStorage está bloqueado (previsualizaciones, modo privado)
+
+function leer(){
+  const vacio = { rastro:[], abiertas:[] };
+  try{
+    const s = localStorage.getItem(CLAVE);
+    return s ? JSON.parse(s) : vacio;
+  }catch(e){ return mem || vacio; }
+}
+function guardar(e){
+  mem = e;
+  try{ localStorage.setItem(CLAVE, JSON.stringify(e)); }catch(_){}
+}
+
+let estado = esDemo ? { rastro:[], abiertas:[] } : leer();  // la demo siempre empieza limpia
+if (params.has("reset")){
+  estado = { rastro:[], abiertas:[] };
+  guardar(estado);
+  history.replaceState(null,"",location.pathname);
+}
+
+/* ══════════════════════════════════════════════════════════════
+   3 · GEOMETRÍA
+   ══════════════════════════════════════════════════════════════ */
+const R_TIERRA = 6371000, RAD = Math.PI/180;
+
+function distancia(la1, lo1, la2, lo2){
+  const dLa = (la2-la1)*RAD, dLo = (lo2-lo1)*RAD;
+  const a = Math.sin(dLa/2)**2 +
+            Math.cos(la1*RAD)*Math.cos(la2*RAD)*Math.sin(dLo/2)**2;
+  return 2 * R_TIERRA * Math.asin(Math.min(1, Math.sqrt(a)));
+}
+
+const E = CONFIG.esquinas;
+let W = 0, H = 0, mPorPx = 1;
+
+/* La imagen se dibuja con object-fit:contain, o sea centrada y con barras.
+   Los lienzos ocupan todo el contenedor, así que hay que proyectar sobre el
+   rectángulo REAL de la imagen o la niebla se abre en el sitio equivocado. */
+let recto = { x:0, y:0, w:0, h:0 };
+
+function calcularRecto(){
+  const iw = imgMapa.naturalWidth, ih = imgMapa.naturalHeight;
+  if (!iw || !ih){ recto = { x:0, y:0, w:W, h:H }; return; }
+  const k = Math.min(W/iw, H/ih);
+  const w = iw*k, h = ih*k;
+  recto = { x:(W-w)/2, y:(H-h)/2, w, h };
+}
+
+function aPixel(lat, lon){
+  return [ recto.x + (lon - E.oeste)/(E.este - E.oeste) * recto.w,
+           recto.y + (E.norte - lat)/(E.norte - E.sur) * recto.h ];
+}
+
+/* ══════════════════════════════════════════════════════════════
+   4 · LIENZOS
+   ══════════════════════════════════════════════════════════════ */
+const cajaMapa = document.getElementById("lienzos");
+const imgMapa  = document.getElementById("mapa");
+const cNiebla  = document.getElementById("niebla");
+const cHud     = document.getElementById("hud");
+const gN = cNiebla.getContext("2d");
+const gH = cHud.getContext("2d");
+let dpr = 1;
+
+function dimensionar(){
+  dpr = Math.min(window.devicePixelRatio || 1, 2);
+  const r = cajaMapa.getBoundingClientRect();
+  W = r.width; H = r.height;
+  for (const c of [cNiebla, cHud]){
+    c.width = Math.round(W*dpr); c.height = Math.round(H*dpr);
+    c.getContext("2d").setTransform(dpr,0,0,dpr,0,0);
+  }
+  calcularRecto();
+
+  // metros por píxel: media de los dos ejes del rectángulo dibujado
+  const anchoM = distancia(E.norte, E.oeste, E.norte, E.este);
+  const altoM  = distancia(E.norte, E.oeste, E.sur,   E.oeste);
+  mPorPx = ((anchoM/recto.w) + (altoM/recto.h)) / 2;
+
+  pintarNiebla();
+}
+
+/* La niebla es una capa opaca a la que le vamos abriendo agujeros. */
+function pintarNiebla(){
+  gN.setTransform(dpr,0,0,dpr,0,0);
+  gN.globalCompositeOperation = "source-over";
+  gN.clearRect(0,0,W,H);
+
+  const g = gN.createLinearGradient(0,0,0,H);
+  g.addColorStop(0,   "#1e2b39");
+  g.addColorStop(.55, "#16212e");
+  g.addColorStop(1,   "#0f1822");
+  gN.fillStyle = g;
+  gN.fillRect(0,0,W,H);
+
+  // grano: manchas sutiles para que se lea como territorio, no como error
+  gN.globalAlpha = .05;
+  let s = 20250725;
+  const azar = () => (s = (s*1103515245 + 12345) & 0x7fffffff) / 0x7fffffff;
+  for (let i=0; i<90; i++){
+    const x = azar()*W, y = azar()*H, r = 22 + azar()*70;
+    const b = gN.createRadialGradient(x,y,0,x,y,r);
+    b.addColorStop(0, azar() > .5 ? "#4a5f75" : "#060b12");
+    b.addColorStop(1, "transparent");
+    gN.fillStyle = b; gN.beginPath(); gN.arc(x,y,r,0,7); gN.fill();
+  }
+  gN.globalAlpha = 1;
+
+  gN.globalCompositeOperation = "destination-out";
+  for (const [la,lo] of estado.rastro) despejar(la, lo);
+  gN.globalCompositeOperation = "source-over";
+}
+
+function despejar(lat, lon){
+  const [x,y] = aPixel(lat, lon);
+  const r = Math.max(14, CONFIG.radioNiebla / mPorPx);
+  const g = gN.createRadialGradient(x,y,r*0.35, x,y,r);
+  g.addColorStop(0,   "rgba(0,0,0,1)");
+  g.addColorStop(.72, "rgba(0,0,0,.92)");
+  g.addColorStop(1,   "rgba(0,0,0,0)");
+  gN.fillStyle = g;
+  gN.beginPath(); gN.arc(x,y,r,0,7); gN.fill();
+}
+
+/* ══════════════════════════════════════════════════════════════
+   5 · POSICIÓN
+   ══════════════════════════════════════════════════════════════ */
+let pos = null;        // {lat, lon, prec} suavizado
+let distActual = null;
+let dentroSeguidas = 0;
+let sinMovimiento = true;
+
+const ALFA = 0.4;      // suavizado exponencial contra el temblor del GPS
+
+function alRecibirPosicion(p){
+  const { latitude:la, longitude:lo, accuracy:pr } = p.coords;
+
+  if (!pos) pos = { lat:la, lon:lo, prec:pr };
+  else {
+    pos.lat  += ALFA*(la - pos.lat);
+    pos.lon  += ALFA*(lo - pos.lon);
+    pos.prec += 0.5*(pr - pos.prec);
+  }
+
+  if (esAutor){ refrescarAutor(pr); return; }
+
+  // El rastro se diezma: sólo guardamos si nos hemos movido de verdad.
+  const ult = estado.rastro[estado.rastro.length-1];
+  if (!ult || distancia(ult[0], ult[1], pos.lat, pos.lon) > 10){
+    estado.rastro.push([+pos.lat.toFixed(6), +pos.lon.toFixed(6)]);
+    gN.globalCompositeOperation = "destination-out";
+    despejar(pos.lat, pos.lon);
+    gN.globalCompositeOperation = "source-over";
+    guardar(estado);
+    sinMovimiento = false;
+  }
+
+  const est = estacionActiva();
+  if (est){
+    distActual = distancia(pos.lat, pos.lon, est.lat, est.lon);
+    // Dos lecturas seguidas dentro del radio antes de dar el aviso:
+    // así un pico del GPS no dispara la alarma en falso.
+    if (distActual <= CONFIG.radioZona){
+      dentroSeguidas++;
+      if (dentroSeguidas === 2) entrarEnZona();
+    } else dentroSeguidas = 0;
+  } else distActual = null;
+
+  refrescarInstrumento();
+}
+
+function alFallarPosicion(err){
+  const msg = err.code === 1
+    ? "Hay que dar permiso de ubicación para que el mapa se despeje."
+    : "No hay señal de GPS. Salid a cielo abierto y esperad un poco.";
+  document.getElementById("prec").textContent = msg;
+}
+
+/* ══════════════════════════════════════════════════════════════
+   6 · SONIDO Y VIBRACIÓN
+   ══════════════════════════════════════════════════════════════ */
+let ctxAudio = null;
+let ultimoPitido = 0;
+
+function abrirAudio(){
+  if (ctxAudio) return;
+  try{
+    ctxAudio = new (window.AudioContext || window.webkitAudioContext)();
+    if (ctxAudio.state === "suspended") ctxAudio.resume();
+  }catch(e){}
+}
+
+function pitido(hz, ms, vol){
+  if (!ctxAudio) return;
+  const o = ctxAudio.createOscillator(), g = ctxAudio.createGain();
+  o.type = "sine"; o.frequency.value = hz;
+  g.gain.setValueAtTime(0, ctxAudio.currentTime);
+  g.gain.linearRampToValueAtTime(vol, ctxAudio.currentTime + .01);
+  g.gain.exponentialRampToValueAtTime(.0001, ctxAudio.currentTime + ms/1000);
+  o.connect(g); g.connect(ctxAudio.destination);
+  o.start(); o.stop(ctxAudio.currentTime + ms/1000 + .02);
+}
+
+function vibrar(ms){
+  if (navigator.vibrate) navigator.vibrate(ms);   // en iOS no existe: sólo suena
+}
+
+/* El pulso se acelera al acercarse. Es el sónar. */
+function latido(ahora){
+  if (distActual == null || distActual > CONFIG.radioAudio) return;
+  const d = distActual;
+  let intervalo;
+  if (d <= CONFIG.radioZona) intervalo = 220;
+  else {
+    const t = (d - CONFIG.radioZona) / (CONFIG.radioAudio - CONFIG.radioZona);
+    intervalo = 260 + t*2000;
+  }
+  if (ahora - ultimoPitido < intervalo) return;
+  ultimoPitido = ahora;
+  const cerca = d <= CONFIG.radioZona;
+  pitido(cerca ? 1180 : 660, cerca ? 80 : 55, cerca ? .22 : .13);
+  vibrar(cerca ? 45 : 25);
+}
+
+let yaAvisado = false;
+function entrarEnZona(){
+  if (yaAvisado) return;
+  yaAvisado = true;
+  vibrar([90,70,90,70,220]);
+  [0,140,280].forEach((t,i) => setTimeout(() => pitido(880 + i*220, 130, .25), t));
+  document.getElementById("pistaTitulo").textContent = "Estáis encima";
+  document.getElementById("pistaTexto").textContent =
+    "La etiqueta está a menos de " + CONFIG.radioZona + " metros. Buscadla y acercadle el móvil.";
+}
+
+/* ══════════════════════════════════════════════════════════════
+   7 · DIBUJO EN VIVO (marcador + sónar + rastro)
+   ══════════════════════════════════════════════════════════════ */
+let quietud = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+function fotograma(t){
+  requestAnimationFrame(fotograma);
+  gH.clearRect(0,0,W,H);
+  if (!pos) return;
+
+  latido(t);
+
+  // rastro caminado, en oro tenue: el mapa que estáis levantando
+  if (estado.rastro.length > 1){
+    gH.beginPath();
+    estado.rastro.forEach(([la,lo], i) => {
+      const [x,y] = aPixel(la,lo);
+      i ? gH.lineTo(x,y) : gH.moveTo(x,y);
+    });
+    gH.strokeStyle = "rgba(200,149,47,.28)";
+    gH.lineWidth = 1.5; gH.lineJoin = "round"; gH.lineCap = "round";
+    gH.stroke();
+  }
+
+  const [x,y] = aPixel(pos.lat, pos.lon);
+  const proximidad = distActual == null ? 0
+      : Math.max(0, Math.min(1, 1 - (distActual - CONFIG.radioZona) /
+                                   (CONFIG.radioAudio - CONFIG.radioZona)));
+  const t2 = (distActual != null && distActual <= CONFIG.radioZona) ? 1 : proximidad;
+  const color = mezcla("#3d7d8f", "#f2b134", t2);
+
+  // círculo de incertidumbre del GPS
+  if (pos.prec){
+    gH.beginPath();
+    gH.arc(x, y, Math.max(6, pos.prec/mPorPx), 0, 7);
+    gH.fillStyle = "rgba(61,125,143,.11)";
+    gH.strokeStyle = "rgba(61,125,143,.28)";
+    gH.lineWidth = 1; gH.fill(); gH.stroke();
+  }
+
+  // anillos de sónar, más rápidos cuanto más cerca
+  if (!quietud && distActual != null && distActual < CONFIG.radioAudio){
+    const periodo = 1900 - proximidad*1350;
+    for (let k=0; k<2; k++){
+      const f = (((t + k*periodo/2) % periodo) / periodo);
+      gH.beginPath();
+      gH.arc(x, y, 9 + f*46, 0, 7);
+      gH.strokeStyle = tintar(color, (1-f)*0.5);
+      gH.lineWidth = 1.6; gH.stroke();
+    }
+  }
+
+  // marcador
+  gH.beginPath(); gH.arc(x,y,7.5,0,7);
+  gH.fillStyle = color; gH.fill();
+  gH.strokeStyle = "#0d151d"; gH.lineWidth = 2.5; gH.stroke();
+}
+
+function mezcla(a, b, t){
+  const p = h => [1,3,5].map(i => parseInt(h.slice(i,i+2),16));
+  const [r1,g1,b1] = p(a), [r2,g2,b2] = p(b);
+  return `rgb(${Math.round(r1+(r2-r1)*t)},${Math.round(g1+(g2-g1)*t)},${Math.round(b1+(b2-b1)*t)})`;
+}
+function tintar(c, a){
+  const n = c.match(/\d+/g);
+  return n ? `rgba(${n[0]},${n[1]},${n[2]},${a})` : c;
+}
+
+/* ══════════════════════════════════════════════════════════════
+   8 · ESTACIONES Y DESBLOQUEO POR NFC
+   ══════════════════════════════════════════════════════════════ */
+function estacionActiva(){
+  return CONFIG.estaciones.find(e => !estado.abiertas.includes(e.k)) || null;
+}
+
+function pintarMedallero(){
+  const m = document.getElementById("medallero");
+  m.innerHTML = "";
+  const act = estacionActiva();
+  for (const e of CONFIG.estaciones){
+    const d = document.createElement("div");
+    d.className = "punto" +
+      (estado.abiertas.includes(e.k) ? " hecho" : "") +
+      (act && act.k === e.k ? " activo" : "");
+    m.appendChild(d);
+  }
+}
+
+function refrescarInstrumento(){
+  const est = estacionActiva();
+  const elD = document.getElementById("dist");
+  const elP = document.getElementById("prec");
+
+  if (!est){
+    elD.textContent = "✓"; elD.classList.remove("cerca");
+    document.getElementById("barraFill").style.width = "100%";
+    elP.textContent = "expedición completa";
+    return;
+  }
+  if (distActual == null){
+    elD.textContent = "···"; elP.textContent = "buscando señal";
+    return;
+  }
+
+  elD.textContent = distActual < 1000
+      ? Math.round(distActual)
+      : (distActual/1000).toFixed(1) + " k";
+  elD.classList.toggle("cerca", distActual <= CONFIG.radioZona);
+
+  const pct = Math.max(2, Math.min(100,
+      100 * (1 - (distActual - CONFIG.radioZona) / (400 - CONFIG.radioZona))));
+  document.getElementById("barraFill").style.width = pct + "%";
+
+  const pr = Math.round(pos.prec);
+  elP.textContent = "±" + pr + " m" + (pr > 25 ? " · señal floja" : "");
+}
+
+function mostrarPista(){
+  const est = estacionActiva();
+  if (!est){
+    document.getElementById("pistaTitulo").textContent = "Final";
+    document.getElementById("pistaTexto").textContent = CONFIG.finalTexto;
+    return;
+  }
+  document.getElementById("pistaTitulo").textContent =
+    "Pista " + (CONFIG.estaciones.indexOf(est)+1) + " de " + CONFIG.estaciones.length;
+  document.getElementById("pistaTexto").textContent = est.pista;
+}
+
+/* Al tocar la etiqueta, el móvil abre esta misma página con ?k=…
+   No usamos la API Web NFC: así funciona igual en iPhone y en Android. */
+function comprobarEtiqueta(){
+  const k = params.get("k");
+  if (!k) return;
+  history.replaceState(null, "", location.pathname);
+
+  const est = CONFIG.estaciones.find(e => e.k === k);
+  if (!est) return;
+
+  if (estado.abiertas.includes(est.k)){
+    avisoSimple("Ya la teníais", "Esta estación ya estaba encontrada. La siguiente está en otro sitio.");
+    return;
+  }
+  const activa = estacionActiva();
+  if (activa && activa.k !== est.k){
+    avisoSimple("Todavía no toca", "Habéis encontrado una etiqueta de más adelante. Guardad el sitio en la cabeza y seguid la pista de ahora.");
+    return;
+  }
+
+  desbloquear(est);
+}
+
+/* Se llama desde la URL de la etiqueta y también desde la demo. */
+function desbloquear(est){
+  if (estado.abiertas.includes(est.k)) return;
+  estado.abiertas.push(est.k);
+  guardar(estado);
+  yaAvisado = false; dentroSeguidas = 0;
+  celebrar(est);
+}
+
+function celebrar(est){
+  const siguiente = estacionActiva();
+  document.getElementById("logroMedalla").textContent = est.medalla || "⭐";
+  document.getElementById("logroNombre").textContent = est.nombre;
+  document.getElementById("logroPista").textContent =
+    siguiente ? siguiente.pista : CONFIG.finalTexto;
+  document.getElementById("capaLogro").hidden = false;
+
+  // En la demo nadie va a estar pulsando: se cierra sola y sigue el paseo.
+  if (esDemo) setTimeout(() => {
+    document.getElementById("capaLogro").hidden = true;
+    mostrarPista();
+  }, 3200);
+
+  abrirAudio();
+  [0,110,230,400].forEach((t,i) => setTimeout(() => pitido([660,880,1100,1320][i], 190, .26), t));
+  vibrar([70,60,70,60,300]);
+  pintarMedallero();
+  mostrarPista();
+}
+
+function avisoSimple(titulo, texto){
+  document.getElementById("logroMedalla").textContent = "🧭";
+  document.getElementById("logroNombre").textContent = titulo;
+  document.getElementById("logroPista").textContent = texto;
+  document.getElementById("capaLogro").hidden = false;
+}
+
+/* ══════════════════════════════════════════════════════════════
+   9 · PANTALLA ENCENDIDA
+   ══════════════════════════════════════════════════════════════ */
+let cerrojo = null;
+async function mantenerPantalla(){
+  try{
+    if ("wakeLock" in navigator) cerrojo = await navigator.wakeLock.request("screen");
+  }catch(e){}
+}
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible" && !cerrojo) mantenerPantalla();
+});
+
+/* ══════════════════════════════════════════════════════════════
+   10 · MODO AUTOR
+   ══════════════════════════════════════════════════════════════ */
+let puntos = [];
+try{ puntos = JSON.parse(localStorage.getItem("yincana.autor") || "[]"); }catch(e){}
+
+function refrescarAutor(precReal){
+  document.getElementById("aLat").textContent = pos.lat.toFixed(6);
+  document.getElementById("aLon").textContent = pos.lon.toFixed(6);
+  const el = document.getElementById("aPrec");
+  el.textContent = "±" + precReal.toFixed(1) + " m";
+  el.className = precReal <= 10 ? "bien" : precReal <= 20 ? "regular" : "mal";
+  const n = document.getElementById("aN");
+  n.textContent = (+n.textContent) + 1;
+}
+
+function claveAzar(){
+  return Array.from(crypto.getRandomValues(new Uint8Array(3)))
+    .map(b => b.toString(16).padStart(2,"0")).join("");
+}
+
+function pintarSalida(){
+  const s = document.getElementById("aSalida");
+  if (!puntos.length){ s.textContent = "Sin puntos marcados todavía."; return; }
+  s.textContent = puntos.map(p =>
+    `{ k:"${p.k}", nombre:"${p.nombre}", lat:${p.lat}, lon:${p.lon}, medalla:"⭐",\n  pista:"" },`
+  ).join("\n") + "\n\n— URLs para grabar en las etiquetas —\n" +
+  puntos.map(p => `${p.nombre}\n${location.origin}${location.pathname}?k=${p.k}`).join("\n\n");
+}
+
+if (esAutor){
+  document.getElementById("autor").hidden = false;
+  document.getElementById("capaInicio").hidden = true;
+  pintarSalida();
+
+  document.getElementById("aMarcar").onclick = () => {
+    if (!pos) return alert("Todavía no hay posición.");
+    const nombre = (document.getElementById("aNombre").value || "").trim()
+                || "Punto " + (puntos.length + 1);
+    puntos.push({ k:claveAzar(), nombre,
+                  lat:+pos.lat.toFixed(6), lon:+pos.lon.toFixed(6) });
+    try{ localStorage.setItem("yincana.autor", JSON.stringify(puntos)); }catch(e){}
+    document.getElementById("aNombre").value = "";
+    document.getElementById("aN").textContent = "0";
+    pintarSalida();
+    if (navigator.vibrate) navigator.vibrate(60);
+  };
+
+  document.getElementById("aBorrar").onclick = () => {
+    if (!confirm("¿Borrar todos los puntos marcados?")) return;
+    puntos = [];
+    try{ localStorage.removeItem("yincana.autor"); }catch(e){}
+    pintarSalida();
+  };
+
+  document.getElementById("aCopiar").onclick = () => {
+    const t = document.getElementById("aSalida").textContent;
+    (navigator.clipboard ? navigator.clipboard.writeText(t) : Promise.reject())
+      .then(() => document.getElementById("aCopiar").textContent = "Copiado")
+      .catch(() => document.getElementById("aCopiar").textContent = "Selecciona el texto y cópialo a mano");
+  };
+
+  navigator.geolocation.watchPosition(alRecibirPosicion, alFallarPosicion,
+    { enableHighAccuracy:true, maximumAge:0, timeout:20000 });
+}
+
+/* ══════════════════════════════════════════════════════════════
+   11 · MODO DEMO
+   GPS de mentira que recorre la ruta solo. Sirve para enseñar el juego sin
+   salir de casa y para probar en un portátil, que no tiene GPS. Al llegar a
+   una estación simula el toque de la etiqueta.
+   ══════════════════════════════════════════════════════════════ */
+let demoJugando = true, demoVelocidad = 4, demoTramo = 0, demoT = 0, demoPausa = 0;
+
+function rutaDemo(){
+  return [CONFIG.inicioDemo, ...CONFIG.estaciones.map(e => [e.lat, e.lon])];
+}
+
+function pasoDemo(){
+  if (!demoJugando) return;
+  // Sin esto seguiría andando por detrás de la pantalla de logro.
+  if (!document.getElementById("capaLogro").hidden) return;
+  if (demoPausa > 0){ demoPausa--; return; }
+
+  const ruta = rutaDemo();
+  if (demoTramo >= ruta.length - 1) return;
+
+  const [la0, lo0] = ruta[demoTramo], [la1, lo1] = ruta[demoTramo + 1];
+  const metros = distancia(la0, lo0, la1, lo1);
+  demoT += (1.4 * demoVelocidad * 0.25) / metros;   // 1,4 m/s es andar normal
+
+  if (demoT >= 1){
+    demoT = 0;
+    const est = CONFIG.estaciones[demoTramo];
+    demoTramo++;
+    if (est){
+      demoPausa = 12;                                // se paran a "buscar"
+      setTimeout(() => desbloquear(est), 900);
+    }
+    return;
+  }
+
+  // Serpenteo y ruido, que en línea recta y sin temblor no se parece a un GPS
+  const t = demoT;
+  const culebra = Math.sin(t * Math.PI * 3) * 0.00018;
+  const ruido   = () => (Math.random() - 0.5) * 0.000045;
+
+  alRecibirPosicion({ coords: {
+    latitude:  la0 + (la1 - la0)*t + culebra*0.45 + ruido(),
+    longitude: lo0 + (lo1 - lo0)*t + culebra      + ruido(),
+    accuracy:  7 + Math.random()*6,
+  }});
+}
+
+function montarDemo(){
+  const barra = document.createElement("div");
+  barra.id = "demoBarra";
+  barra.innerHTML =
+    '<span class="sello">Demo</span>' +
+    '<button id="demoPlay" aria-label="Pausar">Pausa</button>' +
+    '<button id="demoVel">x4</button>' +
+    '<button id="demoOtra">Repetir</button>';
+  document.body.appendChild(barra);
+
+  document.getElementById("demoPlay").onclick = e => {
+    demoJugando = !demoJugando;
+    e.target.textContent = demoJugando ? "Pausa" : "Seguir";
+  };
+  document.getElementById("demoVel").onclick = e => {
+    demoVelocidad = { 4:12, 12:30, 30:4 }[demoVelocidad];
+    e.target.textContent = "x" + demoVelocidad;
+  };
+  document.getElementById("demoOtra").onclick = () => {
+    estado = { rastro:[], abiertas:[] }; guardar(estado);
+    demoTramo = 0; demoT = 0; demoPausa = 0; pos = null;
+    yaAvisado = false; dentroSeguidas = 0;
+    document.getElementById("capaLogro").hidden = true;
+    pintarNiebla(); pintarMedallero(); mostrarPista();
+  };
+
+  setInterval(pasoDemo, 250);
+}
+
+/* ══════════════════════════════════════════════════════════════
+   12 · ARRANQUE
+   ══════════════════════════════════════════════════════════════ */
+document.getElementById("nombrePueblo").textContent = CONFIG.pueblo;
+document.title = "Expedición · " + CONFIG.pueblo;
+imgMapa.onload  = () => dimensionar();
+imgMapa.onerror = () => { imgMapa.style.display = "none"; dimensionar(); };
+imgMapa.src = CONFIG.mapa;
+
+window.addEventListener("resize", dimensionar);
+if (window.visualViewport) visualViewport.addEventListener("resize", dimensionar);
+
+let siguiendo = false;
+function arrancarSeguimiento(){
+  if (siguiendo) return;
+  siguiendo = true;
+  document.getElementById("capaInicio").hidden = true;
+  dimensionar();
+  mantenerPantalla();
+  navigator.geolocation.watchPosition(alRecibirPosicion, alFallarPosicion,
+    { enableHighAccuracy:true, maximumAge:1000, timeout:20000 });
+  requestAnimationFrame(fotograma);
+}
+
+document.getElementById("btnSeguir").onclick = () => {
+  abrirAudio();                     // el toque cuenta como gesto: habilita el sonido
+  document.getElementById("capaLogro").hidden = true;
+  mostrarPista();
+  arrancarSeguimiento();
+};
+
+document.getElementById("btnEmpezar").onclick = () => {
+  abrirAudio();
+  if (esDemo){
+    siguiendo = true;
+    document.getElementById("capaInicio").hidden = true;
+    dimensionar();
+    requestAnimationFrame(fotograma);
+    montarDemo();
+  } else arrancarSeguimiento();
+};
+
+if (esDemo){
+  document.getElementById("tituloInicio").innerHTML = "Cadavedo,<br>a vista de demo";
+  document.getElementById("textoInicio").textContent =
+    "Recorrido simulado: no usa el GPS ni pide permisos. Camina solo por las tres " +
+    "estaciones y va tocando las etiquetas al llegar.";
+  document.getElementById("btnEmpezar").textContent = "Ver la demo";
+}
+
+if (!esAutor){
+  dimensionar();
+  pintarMedallero();
+  mostrarPista();
+  comprobarEtiqueta();
+  // Tocar una etiqueta recarga la página. Si ya habían empezado, retomamos
+  // solos en vez de hacerles pulsar "Empezar" otra vez.
+  if (!esDemo && (estado.rastro.length || estado.abiertas.length)){
+    document.body.addEventListener("pointerdown", abrirAudio, { once:true });
+    if (document.getElementById("capaLogro").hidden) arrancarSeguimiento();
+  }
+}
+
+if ("serviceWorker" in navigator){
+  navigator.serviceWorker.register("sw.js").catch(()=>{});
+}
+</script>
+</body>
+</html>
