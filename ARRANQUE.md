@@ -8,8 +8,8 @@ repetir lo que ya está ahí.
 ## Mensaje para pegar
 
 > Yincana con niebla de guerra para mis primos de 6 y 10 años, en Cadavedo
-> (Valdés, Asturias), en agosto. El código base ya está y las 88 pruebas pasan:
-> ejecuta `python3 pruebas.py` antes de nada para confirmarlo. Abre también
+> (Valdés, Asturias), en agosto. El código base ya está y las 92 pruebas pasan:
+> ejecuta `python pruebas.py` antes de nada para confirmarlo. Abre también
 > `?demo` en el navegador para ver de qué va sin necesidad de GPS.
 >
 > Léete `CLAUDE.md` y `LEEME.md`. Lo hecho y lo que queda está abajo en este
@@ -25,10 +25,11 @@ repetir lo que ya está ahí.
 Funciona de punta a punta con GPS simulado: niebla, frío/caliente, sónar,
 desbloqueo por etiqueta, medallas, capítulos, modo autor, demo, persistencia
 entre recargas, etiqueta repetida, etiqueta adelantada, clave inventada y
-pantalla de cierre. Las 88 comprobaciones de `pruebas.py` pasan, y la demo
+pantalla de cierre. Las 92 comprobaciones de `pruebas.py` pasan, y la demo
 recorre los dos capítulos de punta a punta ella sola.
 
-Sin probar en la calle. Sin las imágenes de los mapas. Sin desplegar. Y las
+Los dos mapas ya están generados y las esquinas del `CONFIG` son las reales del
+recorte. Sin probar en la calle. Sin desplegar. Y las
 coordenadas de las estaciones son de OpenStreetMap, no de campo: sirven para la
 demo y nada más.
 
@@ -155,9 +156,10 @@ monto.
 - **Las coordenadas de las tres estaciones.** Son de OpenStreetMap: apuntan al
   apeadero, al nodo del núcleo y a la ermita, no a donde vaya a esconder yo la
   etiqueta. Hay que recapturarlas todas con `?modo=autor`.
-- **Los recuadros de los dos capítulos.** Los que hay en `CONFIG` son los que
-  pedí, no los que devuelve `mapa.py` tras recortar. Al generar las imágenes hay
-  que pegar las esquinas que imprima, o la niebla se abrirá desplazada.
+- **El sitio del apeadero.** El nodo de OSM cae a 78 m del borde oeste del mapa
+  del pueblo y a 83 m del sur, justo en el límite de la franja segura. Si la
+  etiqueta acaba más al sur —en el andén, por ejemplo— hay que ensanchar el
+  recuadro y regenerar el mapa. El modo autor lo avisa al marcar.
 - Precisión real del GPS entre fachadas de piedra. Hay que recorrer la ruta con
   `?modo=autor` y anotar la precisión en cada sitio candidato. Donde no baje de
   25 m, esa estación va a otro lado.

@@ -36,11 +36,15 @@ Guarda en su propio sitio, así que enseñarla no toca la partida de verdad.
 
 ```bash
 pip install playwright && playwright install chromium
-python3 pruebas.py
+python pruebas.py
 ```
 
-Simula el recorrido completo y valida 88 comportamientos. Con `--capturas`
+Simula el recorrido completo y valida 92 comportamientos. Con `--capturas`
 deja además los pantallazos en `capturas/`.
+
+**Ojo con `python3` en Windows:** es el alias de la Microsoft Store y apunta a
+un intérprete vacío. Si sale `No module named 'PIL'` o `'playwright'`, no es que
+falte el paquete, es que has llamado al Python equivocado. Usa `python`.
 
 ## Puesta en marcha
 
@@ -55,7 +59,7 @@ Los dos de una vez, sacando los recuadros del propio `index.html`:
 
 ```bash
 pip install pillow
-python3 mapa.py --capitulos
+python mapa.py --capitulos
 ```
 
 Al terminar imprime un bloque `esquinas` por capítulo. Pégalos en su capítulo
@@ -70,14 +74,14 @@ Si quieres cambiar un recuadro, edítalo en `CONFIG` y vuelve a lanzarlo sólo
 para ese capítulo:
 
 ```bash
-python3 mapa.py --capitulos regalina
+python mapa.py --capitulos regalina
 ```
 
 Y para un mapa que no esté en el `CONFIG`, a mano con `sur oeste norte este`,
 sacados de openstreetmap.org con la pestaña **Exportar**:
 
 ```bash
-python3 mapa.py 43.5422 -6.3926 43.5505 -6.3852 --salida prueba.jpg
+python mapa.py 43.5422 -6.3926 43.5505 -6.3852 --salida prueba.jpg
 ```
 
 Si no pones imagen no pasa nada: la app funciona igual y al despejar se ve una
@@ -104,9 +108,14 @@ comparar. Si un punto cae fuera de todos los recuadros sale un aviso en rojo:
 ese punto no se vería en el juego. Los botones de arriba cambian de mapa, y al
 coger señal salta solo al del sitio donde estés.
 
+El rectángulo de puntos es la franja segura: dentro de él la pisada despeja el
+círculo entero y el GPS puede bailar sin sacar al jugador del mapa. Un punto
+fuera de esa franja cabe, pero va justo.
+
 Debajo tienes la lista de lo marcado, cada punto con el capítulo en el que cae y
 un aspa para borrarlo. Si uno sale torcido, se quita ese y ya: no hay que
-repetir los demás.
+repetir los demás. Los que quedan pegados al borde salen en ámbar con los metros
+que les sobran.
 
 Al terminar, *Copiar al portapapeles*. Te da dos cosas: las estaciones ya
 agrupadas por capítulo, listas para pegar en el `estaciones` que toque, y la URL

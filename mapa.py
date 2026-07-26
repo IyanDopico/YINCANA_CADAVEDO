@@ -8,10 +8,10 @@ listo para pegar en index.html. La imagen y las coordenadas salen del mismo
 cálculo, así que no pueden descuadrarse entre sí.
 
 Uso:
-    python3 mapa.py --capitulos                      # los del CONFIG, todos
-    python3 mapa.py --capitulos regalina             # sólo uno
-    python3 mapa.py 43.5330 -5.6700 43.5400 -5.6600 --salida mapa.jpg
-    python3 mapa.py 43.5330 -5.6700 43.5400 -5.6600 --zoom 18 --salida mapa.jpg
+    python mapa.py --capitulos                      # los del CONFIG, todos
+    python mapa.py --capitulos regalina             # sólo uno
+    python mapa.py 43.5330 -5.6700 43.5400 -5.6600 --salida mapa.jpg
+    python mapa.py 43.5330 -5.6700 43.5400 -5.6600 --zoom 18 --salida mapa.jpg
 
 Con `--capitulos` saca los recuadros y los nombres de archivo del propio
 `index.html`, que es lo suyo el día que estés en el pueblo: ocho números

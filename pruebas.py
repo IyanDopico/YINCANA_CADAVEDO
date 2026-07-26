@@ -4,8 +4,8 @@ Simulador de yincana: recorre la ruta con un GPS falso y comprueba que todo
 responde como debe. Sirve para validar cambios sin salir de casa.
 
     pip install playwright && playwright install chromium
-    python3 pruebas.py
-    python3 pruebas.py --capturas    # además guarda pantallazos en capturas/
+    python pruebas.py
+    python pruebas.py --capturas    # además guarda pantallazos en capturas/
 
 Devuelve 0 si pasa todo, 1 si algo falla.
 """
@@ -95,6 +95,23 @@ def dentro(esq, la, lo):
             esq["oeste"] <= lo <= esq["este"])
 
 
+def leer_radios():
+    """Los radios del CONFIG, que van antes de los capítulos."""
+    txt = (RAIZ / "index.html").read_text(encoding="utf-8")
+    ini = txt.index("const CONFIG = {")
+    cuerpo = txt[ini: txt.index("capitulos:", ini)]
+    return {k: float(v) for k, v in
+            re.findall(r"(radio\w+)\s*:\s*(-?[\d.]+)", cuerpo)}
+
+
+def margen(esq, la, lo):
+    """Metros hasta el borde más cercano del recuadro."""
+    return min(distancia(la, lo, esq["sur"], lo),
+               distancia(la, lo, esq["norte"], lo),
+               distancia(la, lo, la, esq["oeste"]),
+               distancia(la, lo, la, esq["este"]))
+
+
 def distancia(la1, lo1, la2, lo2):
     R, r = 6371000.0, math.radians
     dla, dlo = r(la2 - la1), r(lo2 - lo1)
@@ -154,6 +171,17 @@ def main():
                   str(c["inicioDemo"]))
     comprobar(len({k for k, _, _ in todas}) == len(todas),
               "no hay dos estaciones con la misma clave")
+
+    # Pegada al borde, la pisada despeja un círculo cortado y el baile normal
+    # del GPS deja al jugador fuera del mapa justo cuando más cerca está.
+    radios = leer_radios()
+    holgura = radios["radioNiebla"] + radios["radioZona"]
+    for c in caps:
+        for k, la, lo in c["estaciones"]:
+            m = margen(c["esquinas"], la, lo)
+            comprobar(m >= holgura,
+                      f"la estación {k} no queda pegada al borde del mapa",
+                      f"a {m:.0f} m del borde, y hacen falta {holgura:.0f}")
     mapas = [c["mapa"] for c in caps]
     comprobar(all(mapas) and len(set(mapas)) == len(mapas),
               "cada capítulo tiene su propia imagen de mapa", str(mapas))
@@ -556,6 +584,23 @@ def main():
                   "y el que queda es el bueno")
         comprobar(pg.is_hidden("#aAlerta"),
                   "y el aviso de fuera del mapa se retira con él")
+
+        # Dentro del mapa pero pegado al borde: cabe, pero la pisada despeja un
+        # círculo cortado. Hay que verlo al marcarlo, no en el pueblo.
+        e0 = caps[0]["esquinas"]
+        borde = (e0["sur"] + (e0["norte"] - e0["sur"]) * 0.5,
+                 e0["oeste"] + 0.0002)
+        for _ in range(12):
+            ctx.set_geolocation({"latitude": borde[0], "longitude": borde[1],
+                                 "accuracy": 8})
+            pg.wait_for_timeout(250)
+        pg.fill("#aNombre", "Junto al borde")
+        pg.click("#aMarcar")
+        pg.wait_for_timeout(400)
+        fila = pg.inner_text("#aLista .item:last-child")
+        comprobar("del borde" in fila,
+                  "avisa de un punto que cabe pero se queda pegado al borde",
+                  fila.replace("\n", " "))
 
         # ── 11 · modo demo ──────────────────────────────────────────────
         # Tiene que funcionar sin permiso de geolocalización: es su motivo de

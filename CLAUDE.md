@@ -12,13 +12,18 @@ explicarle qué es Web Mercator ni qué es el RSSI.
 ## Órdenes
 
 ```bash
-python3 pruebas.py               # 88 comprobaciones con GPS simulado
-python3 pruebas.py --capturas    # además deja pantallazos en capturas/
-python3 pruebas.py --ver         # con navegador visible, para depurar
-python3 mapa.py --capitulos      # genera los mapas del CONFIG y sus esquinas
-python3 mapa.py <sur> <oeste> <norte> <este> --salida <archivo>   # uno suelto
-python3 -m http.server 8000      # servidor local
+python pruebas.py               # 92 comprobaciones con GPS simulado
+python pruebas.py --capturas    # además deja pantallazos en capturas/
+python pruebas.py --ver         # con navegador visible, para depurar
+python mapa.py --capitulos      # genera los mapas del CONFIG y sus esquinas
+python mapa.py <sur> <oeste> <norte> <este> --salida <archivo>   # uno suelto
+python -m http.server 8000      # servidor local
 ```
+
+**`python`, no `python3`.** En la máquina de Iyán (Windows) `python3` es el
+alias de la Microsoft Store, un 3.14 vacío; `python` es el 3.11 que tiene
+Pillow y Playwright. `python3 mapa.py` falla con `No module named 'PIL'` y no
+es que falte Pillow, es que es otro intérprete.
 
 Direcciones: `?demo` recorrido simulado · `?modo=autor` capturar coordenadas ·
 `?reset` borrar la partida.
@@ -42,8 +47,9 @@ configurable está en el bloque `CONFIG` de arriba del todo.
 - `mapa.py` — descarga teselas de OSM, las cose, y calcula las esquinas
 - `pruebas.py` — simulador de recorrido
 - `LEEME.md` — guía de montaje para Iyán
-- `mapa-pueblo.jpg`, `mapa-regalina.jpg` — no están en el repo todavía; uno por
-  capítulo, los genera `mapa.py`
+- `mapa-pueblo.jpg`, `mapa-regalina.jpg` — uno por capítulo, generados con
+  `mapa.py --capitulos`. Las esquinas del `CONFIG` son las reales del recorte,
+  no las que se pidieron: si regeneras un mapa, hay que volver a pegarlas.
 
 ## Geografía de Cadavedo
 

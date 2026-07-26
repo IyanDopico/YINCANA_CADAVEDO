@@ -387,7 +387,7 @@ const CONFIG = {
 
       // Imagen del mapa. Si no carga, se juega igual sobre la retícula.
       mapa: "mapa-pueblo.jpg",
-      esquinas: { norte: 43.5505, sur: 43.5422, oeste: -6.3926, este: -6.3852 },
+      esquinas: { norte: 43.550500, sur: 43.542199, oeste: -6.392600, este: -6.385202 },
 
       // Por dónde empieza a caminar el muñeco de la demo.
       inicioDemo: [43.5434, -6.3921],
@@ -408,7 +408,7 @@ const CONFIG = {
       id: "regalina",
       nombre: "La Regalina",
       mapa: "mapa-regalina.jpg",
-      esquinas: { norte: 43.5564, sur: 43.5528, oeste: -6.3755, este: -6.3705 },
+      esquinas: { norte: 43.556400, sur: 43.552800, oeste: -6.375501, este: -6.370501 },
       inicioDemo: [43.5535, -6.3748],
 
       // Se enseña al terminar el capítulo anterior, antes de abrir el mapa
@@ -513,6 +513,17 @@ function dentroDelMapa(lat, lon, margen = 0){
   const mLon = margen / (111320 * Math.cos(E.norte*RAD));
   return lat >= E.sur   - mLat && lat <= E.norte + mLat &&
          lon >= E.oeste - mLon && lon <= E.este  + mLon;
+}
+
+/* Cuánto le sobra a un punto hasta el borde más cercano de su mapa. Por debajo
+   de radioNiebla + radioZona la pisada despeja un círculo cortado y un baile
+   normal del GPS deja al jugador fuera del recuadro. */
+function margenAlBorde(lat, lon, cap){
+  const e = cap.esquinas;
+  return Math.min(distancia(lat, lon, e.sur,   lon),
+                  distancia(lat, lon, e.norte, lon),
+                  distancia(lat, lon, lat, e.oeste),
+                  distancia(lat, lon, lat, e.este));
 }
 
 /* ¿A qué capítulo pertenece este punto? Null si no cae en ningún recuadro,
@@ -1165,6 +1176,18 @@ function fotogramaAutor(){
   repintar = false;
   gH.clearRect(0,0,W,H);
 
+  // Franja de seguridad: dentro de este rectángulo la pisada despeja el
+  // círculo entero y el GPS puede bailar sin sacar al jugador del mapa.
+  const franja = (CONFIG.radioNiebla + CONFIG.radioZona) / mPorPx;
+  if (franja*2 < recto.w && franja*2 < recto.h){
+    gH.setLineDash([5,5]);
+    // Oscura: el mapa de OSM es claro y en hueso no se ve.
+    gH.strokeStyle = "rgba(20,32,45,.5)"; gH.lineWidth = 1;
+    gH.strokeRect(recto.x + franja, recto.y + franja,
+                  recto.w - franja*2, recto.h - franja*2);
+    gH.setLineDash([]);
+  }
+
   // las estaciones que ya están en el CONFIG, en hueco, para comparar
   for (const e of capPintado.estaciones){
     const [x,y] = aPixel(e.lat, e.lon);
@@ -1183,7 +1206,12 @@ function fotogramaAutor(){
     gH.fillStyle = "#c8952f"; gH.fill();
     gH.strokeStyle = "#0d151d"; gH.lineWidth = 2; gH.stroke();
 
+    // Con reborde oscuro: el nombre tiene que leerse sobre el mapa claro y
+    // también sobre la retícula, cuando todavía no hay imagen.
     gH.font = "12px ui-monospace, Menlo, Consolas, monospace";
+    gH.lineJoin = "round";
+    gH.strokeStyle = "rgba(13,21,29,.9)"; gH.lineWidth = 3.5;
+    gH.strokeText(p.nombre, x + 11, y + 4);
     gH.fillStyle = "#e8e0cf";
     gH.fillText(p.nombre, x + 11, y + 4);
   }
@@ -1226,8 +1254,15 @@ function pintarLista(){
     nombre.textContent = p.nombre;
 
     const donde = document.createElement("small");
-    donde.textContent = cap ? cap.nombre : "fuera del mapa";
-    if (!cap) donde.className = "mal";
+    if (!cap){
+      donde.textContent = "fuera del mapa";
+      donde.className = "mal";
+    } else {
+      const m = margenAlBorde(p.lat, p.lon, cap);
+      const justo = m < CONFIG.radioNiebla + CONFIG.radioZona;
+      donde.textContent = cap.nombre + (justo ? ` · a ${Math.round(m)} m del borde` : "");
+      if (justo) donde.className = "regular";
+    }
 
     const aspa = document.createElement("button");
     aspa.textContent = "✕";
