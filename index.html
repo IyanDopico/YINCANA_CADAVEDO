@@ -62,15 +62,18 @@ header{
   color:var(--hueso); display:block; margin-top:2px; letter-spacing:.04em;
 }
 .medallero{display:flex; gap:6px; align-items:center; flex-shrink:0}
-/* Flotante y por encima de las capas (incluida la de inicio), para que el admin
-   llegue al panel de estaciones en cualquier momento. */
-#btnAdmin{
-  position:fixed; top:calc(env(safe-area-inset-top) + 8px); right:12px; z-index:80;
+/* Flotantes y por encima de las capas (incluida la de inicio), para llegar al
+   panel y a cerrar sesión en cualquier momento. Salir a la derecha del todo;
+   el ⚙ (sólo admin) a su izquierda. */
+#btnSalir, #btnAdmin{
+  position:fixed; top:calc(env(safe-area-inset-top) + 8px); z-index:80;
   background:rgba(13,21,29,.85); border:1px solid var(--tinta);
-  color:var(--hueso-tenue); border-radius:8px; font-size:16px;
-  width:36px; height:36px; cursor:pointer; touch-action:manipulation;
+  color:var(--hueso-tenue); border-radius:8px; cursor:pointer;
+  touch-action:manipulation; height:36px;
 }
-#btnAdmin[hidden]{display:none}
+#btnSalir{ right:12px; padding:0 12px; font-size:13px; }
+#btnAdmin{ right:70px; width:36px; font-size:16px; }
+#btnSalir[hidden], #btnAdmin[hidden]{display:none}
 .punto{
   width:9px; height:9px; border-radius:50%;
   border:1.5px solid var(--tinta); background:transparent;
@@ -341,6 +344,7 @@ body.autor #niebla{display:none}
   </div>
   <div class="medallero" id="medallero"></div>
   <button id="btnAdmin" hidden aria-label="Panel de estaciones">⚙</button>
+  <button id="btnSalir" hidden aria-label="Cerrar sesión">Salir</button>
 </header>
 
 <div id="lienzos">
@@ -702,6 +706,16 @@ async function iniciarSesion(u, pin){
   return usuario;
 }
 
+/* Cerrar sesión: borra la cookie en el servidor y el usuario cacheado, y recarga
+   para volver a la pantalla de identidad. Útil para cambiar de jugador (o de
+   admin a crío) en el mismo móvil. */
+async function cerrarSesion(){
+  try{ await fetch("api/logout", { method:"POST", headers:{ "Content-Type":"application/json" } }); }catch(_){}
+  try{ localStorage.removeItem(CLAVE_USUARIO); }catch(_){}
+  usuario = null;
+  location.reload();
+}
+
 /* ══════════════════════════════════════════════════════════════
    1d · ADMIN: provisión de etiquetas en campo y panel de estaciones
    Cuando el admin escanea una etiqueta (?k=), en vez de desbloquearla se coloca:
@@ -764,8 +778,9 @@ async function mostrarPanelAdmin(resaltar){
   panel.innerHTML = "";
   const h = document.createElement("h2"); h.textContent = "Estaciones";
   const aviso = document.createElement("p"); aviso.className = "aviso";
-  aviso.textContent = "Coloca cada etiqueta escaneándola en su sitio. Aquí la "
-    + "nombras, pones su pista y la ordenas.";
+  aviso.textContent = "Dos formas: crea una etiqueta aquí y copia su URL para "
+    + "grabarla, o graba el tag con la clave que quieras y, al escanearlo en su "
+    + "sitio como admin, se crea y se coloca de golpe. Aquí la nombras y ordenas.";
   const fila = document.createElement("div"); fila.className = "fila";
   const bNueva = document.createElement("button");
   bNueva.className = "boton"; bNueva.textContent = "Nueva etiqueta";
@@ -839,16 +854,28 @@ async function mostrarPanelAdmin(resaltar){
       mostrarPanelAdmin();
     };
 
+    const enlace = base + "?k=" + e.k;
+    const copiar = document.createElement("button");
+    copiar.textContent = "Copiar URL";
+    copiar.style.cssText = "flex:0 0 auto; font-size:12px; padding:5px 12px; "
+      + "border-radius:999px; border:1px solid var(--tinta); background:transparent; "
+      + "color:var(--hueso); cursor:pointer";
+    copiar.onclick = async () => {
+      try{ await navigator.clipboard.writeText(enlace); copiar.textContent = "Copiado ✓"; }
+      catch(_){ prompt("Copia la URL para grabar en el tag:", enlace); }
+      setTimeout(() => { copiar.textContent = "Copiar URL"; }, 1500);
+    };
+
     const url = document.createElement("div");
     url.style.cssText = "flex:1 1 100%; font-size:11px; color:var(--hueso-tenue); word-break:break-all";
-    url.textContent = base + "?k=" + e.k;
+    url.textContent = enlace;
 
     const quien = document.createElement("div");
     quien.style.cssText = "flex:1 1 100%; font-size:12px; color:var(--hueso-tenue)";
     const fs = (encontraronPor[e.k] || []).map(u => (EMOJI[u] || "•") + " " + u);
     quien.textContent = "encontrada por: " + (fs.length ? fs.join(", ") : "nadie aún");
 
-    it.append(nombre, medalla, estado, guardar, borrar, pista, url, quien);
+    it.append(nombre, medalla, estado, guardar, borrar, copiar, url, quien);
     panel.append(it);
   }
 }
@@ -1943,6 +1970,13 @@ if (esDemo){
    demo/autor, que no piden login). */
 function montarJuego(){
   dimensionar();
+  // Botón de cerrar sesión para cualquiera logueado (cambiar de jugador o de
+  // admin a crío en el mismo móvil). Con confirmación, que no se salgan sin querer.
+  if (usuario && !esDemo){
+    const bS = document.getElementById("btnSalir");
+    bS.hidden = false;
+    bS.onclick = () => { if (confirm("¿Cerrar sesión?")) cerrarSesion(); };
+  }
   // El admin tiene el panel de estaciones y coloca etiquetas: escanear una
   // (?k=) captura su GPS en vez de desbloquearla.
   if (usuario === "admin"){
