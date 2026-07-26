@@ -37,7 +37,7 @@ pip install playwright && playwright install chromium
 python3 pruebas.py
 ```
 
-Simula el recorrido completo y valida 64 comportamientos. Con `--capturas`
+Simula el recorrido completo y valida 68 comportamientos. Con `--capturas`
 deja además los pantallazos en `capturas/`.
 
 ## Puesta en marcha
@@ -132,6 +132,9 @@ En `CONFIG`:
 - `radioZona` (25 m) — a partir de aquí avisa de que están encima. No bajes de
   20: entre fachadas de piedra el GPS no da para más.
 - `radioAudio` (150 m) — desde dónde empieza a pitar.
+- `perdonarSiPasaronCerca` (true) — si a un móvil se le pasa una etiqueta, al
+  tocar la siguiente se pone al día, siempre que su rastro demuestre que estuvo
+  allí. Ponlo a `false` para exigir que se toquen todas en orden.
 
 Y en cada capítulo: `mapa`, `esquinas`, `inicioDemo` (por dónde arranca el
 muñeco de la demo), `estaciones` y, salvo en el primero, `traslado`.

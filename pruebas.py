@@ -385,7 +385,50 @@ def main():
         comprobar(est["abiertas"] == [] and est["rastro"] == [],
                   "?reset deja la partida a cero", json.dumps(est)[:60])
 
-        # ── 9 · modo autor ──────────────────────────────────────────────
+        # ── 9 · dos móviles, dos partidas ───────────────────────────────
+        # Cada móvil lleva su localStorage. Si a uno se le pasa una etiqueta
+        # tiene que poder ponerse al día en la siguiente, o va desfasado el
+        # resto del juego sin que nadie se entere.
+        if len(todas) > 1 and pg.evaluate("CONFIG.perdonarSiPasaronCerca"):
+            print("\nDos móviles")
+
+            # Un móvil que caminó hasta la primera estación pero al que no le
+            # llegaron a acercar la etiqueta: al tocar la siguiente tiene que
+            # ponerse al día, porque su rastro demuestra que estuvo allí.
+            pg.goto(BASE)
+            pg.wait_for_timeout(400)
+            pg.click("#btnEmpezar")
+            pg.wait_for_timeout(300)
+            caminar(ctx, pg, origen, (todas[0][1], todas[0][2]))
+            pg.goto(f"{BASE}?k={todas[1][0]}")
+            pg.wait_for_timeout(800)
+            comprobar(pg.evaluate(
+                "JSON.parse(localStorage.getItem('yincana.v1')).abiertas")
+                == [todas[0][0], todas[1][0]],
+                "el móvil que se saltó una etiqueta se pone al día en la siguiente",
+                str(pg.evaluate(
+                    "JSON.parse(localStorage.getItem('yincana.v1')).abiertas")))
+            comprobar("TODAVÍA" not in pg.inner_text("#logroNombre").upper(),
+                      "y sin soltarle el aviso de que no toca",
+                      pg.inner_text("#logroNombre"))
+
+            # Y sin haber pasado por allí no se perdona: eso es una etiqueta
+            # encontrada antes de tiempo, no un despiste.
+            pg.goto(f"{BASE}?reset")
+            pg.wait_for_timeout(400)
+            pg.goto(f"{BASE}?k={todas[1][0]}")
+            pg.wait_for_timeout(700)
+            comprobar("TODAVÍA" in pg.inner_text("#logroNombre").upper(),
+                      "sin rastro que lo justifique se le sigue avisando",
+                      pg.inner_text("#logroNombre"))
+            comprobar(pg.evaluate(
+                "JSON.parse(localStorage.getItem('yincana.v1')).abiertas") == [],
+                "y no abre nada")
+
+            pg.goto(f"{BASE}?reset")
+            pg.wait_for_timeout(400)
+
+        # ── 10 · modo autor ─────────────────────────────────────────────
         print("\nModo autor")
         pg.goto(f"{BASE}?modo=autor")
         pg.wait_for_timeout(900)
@@ -431,7 +474,7 @@ def main():
         comprobar("FUERA DE TODOS LOS MAPAS" in pg.inner_text("#aSalida"),
                   "y lo aparta en la salida para que no pase inadvertido")
 
-        # ── 10 · modo demo ──────────────────────────────────────────────
+        # ── 11 · modo demo ──────────────────────────────────────────────
         # Tiene que funcionar sin permiso de geolocalización: es su motivo de
         # existir, poder enseñarlo en un portátil.
         print("\nModo demo")
@@ -476,7 +519,7 @@ def main():
                   "; ".join(err2[:2]))
         ctx2.close()
 
-        # ── 11 · sin errores por el camino ──────────────────────────────
+        # ── 12 · sin errores por el camino ──────────────────────────────
         print("\nConsola")
         comprobar(not errores, "ningún error de JavaScript", "; ".join(errores[:3]))
 

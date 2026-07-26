@@ -332,6 +332,16 @@ const CONFIG = {
   radioZona:   25,   // m — a partir de aquí avisa de que están encima
   radioAudio: 150,   // m — a partir de aquí empieza a pitar
 
+  /* Cada móvil lleva su partida: los dos críos tienen que tocar cada etiqueta.
+     Si a uno se le pasa una, se queda atrás y a partir de ahí sus pistas van
+     desfasadas sin que nadie lo note.
+
+     Con esto en true, al tocar una etiqueta posterior se dan por buenas las que
+     se saltó, pero sólo si su propio rastro demuestra que pasó por encima de
+     ellas. Eso es justo lo que separa "se me olvidó tocar" de "he encontrado
+     una etiqueta de más adelante": el segundo no ha estado allí. */
+  perdonarSiPasaronCerca: true,
+
   /* Cadavedo está estirado: del apeadero a La Regalina hay casi 2 km. En un
      solo mapa cada pisada despejaría el 0,13 % y los críos caminarían un montón
      sin ver abrirse nada. Partido en dos, el casco va al 0,70 % por pisada y
@@ -857,10 +867,36 @@ function comprobarEtiqueta(){
   }
   const activa = estacionActiva();
   if (activa && activa.k !== est.k){
+    const saltadas = TODAS.slice(TODAS.indexOf(activa), TODAS.indexOf(est));
+    if (CONFIG.perdonarSiPasaronCerca && saltadas.length &&
+        saltadas.every(pasaronPorEncima)){
+      ponerseAlDia(est);
+      return;
+    }
     avisoSimple("Todavía no toca", "Habéis encontrado una etiqueta de más adelante. Guardad el sitio en la cabeza y seguid la pista de ahora.");
     return;
   }
 
+  desbloquear(est);
+}
+
+/* ¿El rastro de ESTE móvil pasó por encima de esta estación? Con dos críos
+   caminando juntos, el que no llegó a tocar la etiqueta sí tiene la pisada
+   guardada; el que se ha topado con una de más adelante, no. */
+function pasaronPorEncima(est){
+  return estado.rastro.some(([la, lo]) =>
+    distancia(la, lo, est.lat, est.lon) <= CONFIG.radioZona * 2);
+}
+
+/* Se saltó alguna etiqueta pero estuvo allí: se le dan por buenas las de en
+   medio y se celebra la que acaba de tocar. El medallero se rellena solo, que
+   para el de 6 es lo que se ve. */
+function ponerseAlDia(est){
+  const hasta = TODAS.indexOf(est);
+  for (let i = 0; i < hasta; i++){
+    if (!estado.abiertas.includes(TODAS[i].k)) estado.abiertas.push(TODAS[i].k);
+  }
+  guardar(estado);
   desbloquear(est);
 }
 

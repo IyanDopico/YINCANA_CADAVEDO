@@ -8,7 +8,7 @@ repetir lo que ya está ahí.
 ## Mensaje para pegar
 
 > Yincana con niebla de guerra para mis primos de 6 y 10 años, en Cadavedo
-> (Valdés, Asturias), en agosto. El código base ya está y las 64 pruebas pasan:
+> (Valdés, Asturias), en agosto. El código base ya está y las 68 pruebas pasan:
 > ejecuta `python3 pruebas.py` antes de nada para confirmarlo. Abre también
 > `?demo` en el navegador para ver de qué va sin necesidad de GPS.
 >
@@ -24,7 +24,7 @@ repetir lo que ya está ahí.
 Funciona de punta a punta con GPS simulado: niebla, frío/caliente, sónar,
 desbloqueo por etiqueta, medallas, capítulos, modo autor, demo, persistencia
 entre recargas, etiqueta repetida, etiqueta adelantada, clave inventada y
-pantalla de cierre. Las 64 comprobaciones de `pruebas.py` pasan.
+pantalla de cierre. Las 68 comprobaciones de `pruebas.py` pasan.
 
 Sin probar en la calle. Sin las imágenes de los mapas. Sin desplegar. Y las
 coordenadas de las estaciones son de OpenStreetMap, no de campo: sirven para la
@@ -62,14 +62,22 @@ repasar el recorrido de los tres días.
 El texto de dónde está el tesoro se ha quitado de la medalla de la última
 estación para que la revelación sea sólo del cierre.
 
-## Tareas, por orden
-
 ### 3 · Dos móviles, dos partidas
-Cada dispositivo tiene su `localStorage`, así que van por separado: los dos
-tendrían que tocar cada etiqueta. Puede que esté bien (cada uno con su mapa y
-su medallero) o puede que sea un lío.
+Se quedan las dos partidas separadas: cada uno ve abrirse **su** mapa y llena su
+medallero, que para el de 6 es medio juego. Los dos tienen que tocar cada
+etiqueta, que son seis toques en tres días.
 
-Compara las opciones antes de tocar nada. Sin servidor: no quiero backend.
+Lo que sí se ha arreglado es el único fallo que no se detecta a tiempo: que a un
+móvil se le pase una etiqueta y a partir de ahí vaya desfasado sin que nadie lo
+note. Al tocar una etiqueta posterior se le dan por buenas las que se saltó,
+pero **sólo si su propio rastro demuestra que pasó por encima de ellas**
+(`perdonarSiPasaronCerca`). Eso distingue el despiste de la etiqueta encontrada
+antes de tiempo, que sigue rechazándose.
+
+Descartado sincronizar de verdad: sin backend haría falta QR, y leerlo pide
+`BarcodeDetector`, que Safari no tiene.
+
+## Tareas, por orden
 
 ### 4 · Reparto por edades
 El de 6 no lee. Idea: modo `?quien=peque` con la pantalla dominada por el
@@ -106,12 +114,12 @@ registro NDEF y la página solo lo pinte.
 | | |
 |---|---|
 | Ya | Pedir las NTAG215 y probar el NFC con una etiqueta suelta |
-| Antes de subir | Tarea 3, desplegar con HTTPS |
+| Antes de subir | Desplegar con HTTPS |
 | En el pueblo | Generar los dos mapas, marcar los puntos, anotar precisiones |
 | Después | Rellenar `CONFIG`, grabar las etiquetas, recorrido de prueba yo solo |
 | Reserva | Tareas 4, 5 y 7, solo si sobra tiempo |
 
-Si algo va justo, esto se cae por este orden: 7, 5, 4. La tarea 3 no.
+Si algo va justo, esto se cae por este orden: 7, 5, 4.
 
 Y el plan B de siempre: las pistas impresas en un sobre. Si muere un móvil o
 desaparece una etiqueta, la yincana sigue.

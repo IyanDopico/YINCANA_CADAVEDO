@@ -12,7 +12,7 @@ explicarle qué es Web Mercator ni qué es el RSSI.
 ## Órdenes
 
 ```bash
-python3 pruebas.py               # 64 comprobaciones con GPS simulado
+python3 pruebas.py               # 68 comprobaciones con GPS simulado
 python3 pruebas.py --capturas    # además deja pantallazos en capturas/
 python3 pruebas.py --ver         # con navegador visible, para depurar
 python3 mapa.py <sur> <oeste> <norte> <este> --salida <archivo>   # imagen + esquinas
@@ -100,6 +100,14 @@ worker. Nada de CDN, fuentes remotas ni llamadas a API en tiempo de ejecución.
 
 **El público son un niño de 6 y otro de 10.** El de 6 se guía por el frío/
 caliente y el sonido, no lee. Nada esencial puede depender de leer texto.
+
+**Cada móvil lleva su partida, y se pone al día solo.** No hay sincronización
+—sin backend haría falta QR, y `BarcodeDetector` no existe en Safari— así que
+los dos tienen que tocar cada etiqueta. Lo que sí se arregla es el despiste: al
+tocar una etiqueta posterior se dan por buenas las saltadas, pero sólo si el
+rastro de ese móvil pasó a menos de `radioZona * 2` de ellas. El rastro es lo
+único que distingue "se me olvidó tocar" de "he encontrado una etiqueta de más
+adelante", y esa distinción es la razón de que no valga contar huecos.
 
 ## Trampas que ya nos mordieron
 
