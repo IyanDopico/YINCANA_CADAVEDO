@@ -25,8 +25,10 @@ https://tu-dominio/yincana/?demo
 ```
 
 Recorrido simulado por Cadavedo: no usa el GPS ni pide permisos, así que
-funciona igual en un portátil. Camina sola por las tres estaciones y va tocando
-las etiquetas al llegar. Los mandos de abajo pausan, aceleran y repiten.
+funciona igual en un portátil. Camina sola por las tres estaciones, va tocando
+las etiquetas al llegar, cambia de mapa en el traslado a La Regalina y remata en
+la pantalla de cierre. Los mandos de abajo pausan, aceleran y repiten: a x4 se
+hace larga, ponla a x30 para enseñarla.
 
 Guarda en su propio sitio, así que enseñarla no toca la partida de verdad.
 
@@ -37,7 +39,7 @@ pip install playwright && playwright install chromium
 python3 pruebas.py
 ```
 
-Simula el recorrido completo y valida 70 comportamientos. Con `--capturas`
+Simula el recorrido completo y valida 72 comportamientos. Con `--capturas`
 deja además los pantallazos en `capturas/`.
 
 ## Puesta en marcha

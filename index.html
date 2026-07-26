@@ -964,8 +964,15 @@ function celebrar(est){
 function seguirDespuesDelLogro(){
   document.getElementById("capaLogro").hidden = true;
   const cap = capituloActivo();
-  if (cap !== capPintado && !esDemo){   // la demo no espera a nadie
+  if (cap !== capPintado){
     mostrarTraslado(cap);
+    // En la demo no hay nadie pulsando, pero la pantalla se enseña igual: es
+    // parte de lo que quieres que vea quien la esté mirando.
+    if (esDemo) setTimeout(() => {
+      document.getElementById("capaTraslado").hidden = true;
+      aplicarCapitulo(cap);
+      mostrarPista();
+    }, 2400);
     return;
   }
   aplicarCapitulo(cap);
@@ -1247,10 +1254,15 @@ function rutaDemo(){
   return r;
 }
 
+/* Sin esto la demo seguiría andando por detrás de las pantallas completas. */
+function capaAbierta(){
+  return ["capaLogro","capaTraslado","capaFinal"]
+    .some(id => !document.getElementById(id).hidden);
+}
+
 function pasoDemo(){
   if (!demoJugando) return;
-  // Sin esto seguiría andando por detrás de la pantalla de logro.
-  if (!document.getElementById("capaLogro").hidden) return;
+  if (capaAbierta()) return;
   if (demoPausa > 0){ demoPausa--; return; }
 
   const ruta = rutaDemo();

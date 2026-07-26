@@ -532,6 +532,27 @@ def main():
         comprobar(real is None,
                   "la demo no pisa la partida de verdad", str(real)[:40])
 
+        # Y tiene que llegar sola hasta el final, salto de capítulo incluido:
+        # es lo que va a ver quien se la enseñes, y si se atasca en la pantalla
+        # de traslado no hay nadie ahí para pulsar.
+        completa = False
+        for _ in range(60):
+            pd.wait_for_timeout(1000)
+            if len(pd.evaluate(
+                    "JSON.parse(localStorage.getItem('yincana.demo')).abiertas")
+                   ) == len(todas):
+                completa = True
+                break
+        comprobar(completa,
+                  "la demo llega al final ella sola, cambiando de mapa por el camino",
+                  str(pd.evaluate(
+                      "JSON.parse(localStorage.getItem('yincana.demo')).abiertas")))
+        pd.wait_for_timeout(4000)     # la última medalla antes del cierre
+        comprobar(not pd.is_hidden("#capaFinal"),
+                  "y remata en la pantalla de cierre")
+        if args.capturas:
+            pd.screenshot(path=str(RAIZ / "capturas" / "8-demo-final.png"))
+
         pd.click("#demoOtra", force=True)
         pd.wait_for_timeout(600)
         comprobar(pd.evaluate(

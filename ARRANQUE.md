@@ -8,7 +8,7 @@ repetir lo que ya está ahí.
 ## Mensaje para pegar
 
 > Yincana con niebla de guerra para mis primos de 6 y 10 años, en Cadavedo
-> (Valdés, Asturias), en agosto. El código base ya está y las 70 pruebas pasan:
+> (Valdés, Asturias), en agosto. El código base ya está y las 72 pruebas pasan:
 > ejecuta `python3 pruebas.py` antes de nada para confirmarlo. Abre también
 > `?demo` en el navegador para ver de qué va sin necesidad de GPS.
 >
@@ -25,7 +25,8 @@ repetir lo que ya está ahí.
 Funciona de punta a punta con GPS simulado: niebla, frío/caliente, sónar,
 desbloqueo por etiqueta, medallas, capítulos, modo autor, demo, persistencia
 entre recargas, etiqueta repetida, etiqueta adelantada, clave inventada y
-pantalla de cierre. Las 70 comprobaciones de `pruebas.py` pasan.
+pantalla de cierre. Las 72 comprobaciones de `pruebas.py` pasan, y la demo
+recorre los dos capítulos de punta a punta ella sola.
 
 Sin probar en la calle. Sin las imágenes de los mapas. Sin desplegar. Y las
 coordenadas de las estaciones son de OpenStreetMap, no de campo: sirven para la
