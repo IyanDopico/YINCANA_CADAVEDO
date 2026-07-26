@@ -5,14 +5,21 @@
    Sube el número de VERSION cada vez que edites index.html o el mapa,
    o los móviles seguirán sirviendo la copia vieja. */
 
-const VERSION = "yincana-v7";
+const VERSION = "yincana-v8";
 
 const ARCHIVOS = [
   "./",
   "./index.html",
-  "./mapa-pueblo.jpg",
-  "./mapa-regalina.jpg",
   "./manifest.json",
+  // Leaflet vendorizado: sin esto la página no arranca sin cobertura (la v2 usa
+  // mapa vivo). Las teselas se cachean solas al verlas (fetch → caché).
+  "./vendor/leaflet/leaflet.js",
+  "./vendor/leaflet/leaflet.css",
+  "./vendor/leaflet/images/marker-icon.png",
+  "./vendor/leaflet/images/marker-icon-2x.png",
+  "./vendor/leaflet/images/marker-shadow.png",
+  "./vendor/leaflet/images/layers.png",
+  "./vendor/leaflet/images/layers-2x.png",
 ];
 
 self.addEventListener("install", e => {

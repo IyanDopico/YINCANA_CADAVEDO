@@ -8,6 +8,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <title>Expedición</title>
 <link rel="manifest" href="manifest.json">
+<link rel="stylesheet" href="vendor/leaflet/leaflet.css">
 <style>
 /* ============================================================
    PALETA
@@ -74,20 +75,23 @@ header{
 /* ---------- MAPA ---------- */
 #lienzos{
   flex:1 1 auto; position:relative; overflow:hidden;
-  /* Retícula de levantamiento: si todavía no hay imagen de mapa, al despejar
-     la niebla se ve esto en vez de un vacío negro. */
+  /* Retícula de levantamiento: se ve por debajo mientras cargan las teselas,
+     así nunca hay un vacío negro. */
   background:
     repeating-linear-gradient(0deg,  transparent 0 39px, rgba(61,125,143,.17) 39px 40px),
     repeating-linear-gradient(90deg, transparent 0 39px, rgba(61,125,143,.17) 39px 40px),
     var(--niebla-baja);
 }
-#lienzos canvas, #lienzos img{
-  position:absolute; inset:0; width:100%; height:100%;
-  object-fit:contain;
-}
-#mapa{opacity:.92}
-#niebla{pointer-events:none}
-#hud{pointer-events:none}
+/* El mapa vivo (Leaflet) ocupa todo el contenedor. */
+#mapa{ position:absolute; inset:0; background:transparent; }
+/* El HUD (marcador + sónar) va por encima del mapa, sin capturar toques. */
+#hud{ position:absolute; inset:0; width:100%; height:100%; pointer-events:none; z-index:500; }
+/* La niebla es una capa de Leaflet en su propio panel, entre teselas y marcadores. */
+.leaflet-niebla-pane{ z-index:350; pointer-events:none; }
+.leaflet-container{ background:transparent; font-family:var(--sans); }
+.leaflet-control-attribution{ font-size:9px; background:rgba(13,21,29,.6); color:var(--hueso-tenue); }
+.leaflet-control-attribution a{ color:var(--hueso-tenue); }
+.leaflet-control-zoom{ display:none; }   /* se sigue el GPS; el zoom manual estorba */
 
 /* ---------- INSTRUMENTO ---------- */
 footer{
@@ -280,6 +284,13 @@ body.autor #niebla{display:none}
   opacity:0; pointer-events:none; transition:opacity .3s, transform .3s;
 }
 #toast.visible{opacity:1; transform:translateX(-50%) translateY(0)}
+
+/* Icono de un spawn sobre el mapa: emoji con sombra para que se lea sobre
+   cualquier tesela. */
+.spawn-icono{
+  font-size:22px; line-height:30px; text-align:center;
+  filter:drop-shadow(0 1px 2px rgba(0,0,0,.7));
+}
 @media (prefers-reduced-motion:reduce){
   *{animation-duration:.01ms !important; transition-duration:.01ms !important}
 }
@@ -296,8 +307,7 @@ body.autor #niebla{display:none}
 </header>
 
 <div id="lienzos">
-  <img id="mapa" alt="">
-  <canvas id="niebla"></canvas>
+  <div id="mapa"></div>
   <canvas id="hud"></canvas>
 </div>
 
@@ -365,6 +375,7 @@ body.autor #niebla{display:none}
   <span class="enlace" id="aCopiar">Copiar al portapapeles</span>
 </div>
 
+<script src="vendor/leaflet/leaflet.js"></script>
 <script>
 /* ══════════════════════════════════════════════════════════════
    1 · CONFIGURACIÓN — esto es lo único que tienes que tocar
@@ -572,9 +583,8 @@ async function traerProgreso(){
     if (siguiendo || estado.abiertas.length || estado.rastro.length || estado.capturas.length) return;
     if (!p.abiertas.length && !p.rastro.length && !p.capturas.length) return;
     estado = p; guardar(estado);
-    aplicarCapitulo(capituloActivo());
-    pintarNiebla(); pintarMedallero(); mostrarPista();
-    if (!estacionActiva() && document.getElementById("capaLogro").hidden) montarBarraFinal();
+    aplicarCapitulo(capituloActivo());   // remonta el mapa reconstruyendo la niebla
+    pintarMedallero(); mostrarPista();
   }catch(_){}
 }
 
@@ -638,148 +648,217 @@ function distancia(la1, lo1, la2, lo2){
   return 2 * R_TIERRA * Math.asin(Math.min(1, Math.sqrt(a)));
 }
 
-// Esquinas del capítulo que se está pintando. Cambia al pasar de mapa.
-let E = CAPS[0].esquinas;
-let W = 0, H = 0, mPorPx = 1;
-
-/* ¿Cae este punto en el mapa de ahora? El rastro es uno solo para toda la
-   yincana, así que al pintar el mapa del capítulo hay que dejar fuera las
-   pisadas de los otros. El margen deja entrar las de justo al borde, que sí
-   despejan un trozo. */
-function dentroDelMapa(lat, lon, margen = 0){
-  const mLat = margen / 111320;
-  const mLon = margen / (111320 * Math.cos(E.norte*RAD));
-  return lat >= E.sur   - mLat && lat <= E.norte + mLat &&
-         lon >= E.oeste - mLon && lon <= E.este  + mLon;
-}
-
-/* Cuánto le sobra a un punto hasta el borde más cercano de su mapa. Por debajo
-   de radioNiebla + radioZona la pisada despeja un círculo cortado y un baile
-   normal del GPS deja al jugador fuera del recuadro. */
-function margenAlBorde(lat, lon, cap){
-  const e = cap.esquinas;
-  return Math.min(distancia(lat, lon, e.sur,   lon),
-                  distancia(lat, lon, e.norte, lon),
-                  distancia(lat, lon, lat, e.oeste),
-                  distancia(lat, lon, lat, e.este));
-}
-
-/* ¿A qué capítulo pertenece este punto? Null si no cae en ningún recuadro,
-   que en modo autor significa que ese punto no se vería en ningún mapa. */
-function capituloQueContiene(lat, lon){
-  return CAPS.find(c => lat >= c.esquinas.sur   && lat <= c.esquinas.norte &&
-                        lon >= c.esquinas.oeste && lon <= c.esquinas.este) || null;
-}
-
-/* La imagen se dibuja con object-fit:contain, o sea centrada y con barras.
-   Los lienzos ocupan todo el contenedor, así que hay que proyectar sobre el
-   rectángulo REAL de la imagen o la niebla se abre en el sitio equivocado. */
-let recto = { x:0, y:0, w:0, h:0 };
-
-function calcularRecto(){
-  const iw = imgMapa.naturalWidth, ih = imgMapa.naturalHeight;
-  if (!iw || !ih){ recto = { x:0, y:0, w:W, h:H }; return; }
-  const k = Math.min(W/iw, H/ih);
-  const w = iw*k, h = ih*k;
-  recto = { x:(W-w)/2, y:(H-h)/2, w, h };
-}
-
-function aPixel(lat, lon){
-  return [ recto.x + (lon - E.oeste)/(E.este - E.oeste) * recto.w,
-           recto.y + (E.norte - lat)/(E.norte - E.sur) * recto.h ];
+/* Una sola zona: el área de juego es el rectángulo que engloba las estaciones
+   (y los spawns) con un margen para poder caminar alrededor. Con el mapa en
+   blanco (sin estaciones) cae en un recuadro por defecto sobre Cadavedo. */
+function boundsDeJuego(){
+  const pts = TODAS.map(e => [e.lat, e.lon])
+    .concat(SPAWNS.map(s => [s.lat, s.lon]))
+    .filter(([la, lo]) => Number.isFinite(la) && Number.isFinite(lo));
+  const b = pts.length ? L.latLngBounds(pts)
+                       : L.latLngBounds([[43.5442, -6.3926], [43.5505, -6.3852]]);
+  const c = b.getCenter();
+  const mLat = 111320, mLon = 111320 * Math.cos(c.lat * RAD);
+  // Semiespán = mitad de la caja de estaciones + 250 m de margen, con un mínimo
+  // de 350 m: así la niebla siempre desborda lo que se ve al jugar (zoom 17),
+  // y nunca aparece un borde de mapa sin niebla alrededor.
+  const halfLat = Math.max((b.getNorth() - b.getSouth()) / 2 * mLat + 250, 350) / mLat;
+  const halfLon = Math.max((b.getEast()  - b.getWest())  / 2 * mLon + 250, 350) / mLon;
+  return L.latLngBounds([c.lat - halfLat, c.lng - halfLon],
+                        [c.lat + halfLat, c.lng + halfLon]);
 }
 
 /* ══════════════════════════════════════════════════════════════
-   4 · LIENZOS
+   4 · MAPA VIVO, NIEBLA Y LIENZO DEL INSTRUMENTO
+   Ahora el mapa es Leaflet: él convierte lat/lon a píxel. La niebla es un
+   canvas anclado al mapa (no se repinta al mover ni al hacer zoom); el HUD
+   (marcador + sónar) es un lienzo encima que se repinta por fotograma.
    ══════════════════════════════════════════════════════════════ */
 const cajaMapa = document.getElementById("lienzos");
-const imgMapa  = document.getElementById("mapa");
-const cNiebla  = document.getElementById("niebla");
 const cHud     = document.getElementById("hud");
-const gN = cNiebla.getContext("2d");
 const gH = cHud.getContext("2d");
-let dpr = 1;
+let dpr = 1, W = 0, H = 0;
 
+const ZOOM_JUEGO = 17;   // zoom al que se juega: calle reconocible
+
+const map = L.map("mapa", {
+  zoomControl: false, attributionControl: true,
+  zoomSnap: 0, tap: false,
+});
+map.createPane("niebla");
+map.getPane("niebla").classList.add("leaflet-niebla-pane");
+L.tileLayer("tiles/{z}/{x}/{y}.png", {
+  minZoom: 13, maxZoom: 18,
+  attribution: "© colaboradores de OpenStreetMap",
+}).addTo(map);
+
+// Proyección de conveniencia: lat/lon → píxel de pantalla (contenedor). El HUD
+// ocupa el contenedor entero, así que estos píxeles valen tal cual.
+function aPixel(lat, lon){
+  const p = map.latLngToContainerPoint(L.latLng(lat, lon));
+  return [p.x, p.y];
+}
+
+/* La niebla: un canvas de resolución fija (a un zoom de referencia ZREF)
+   anclado a un rectángulo geográfico. Se extiende L.ImageOverlay, que ya sabe
+   colocar y escalar el canvas y animar el zoom sin saltos. Se pica un agujero
+   por pisada; nunca se repinta al mover ni al hacer zoom. */
+let ZREF = 18;
+function elegirZref(bounds){
+  // El mayor zoom cuyo mask quepa en ~2048 px de lado (tope de RAM del canvas).
+  for (let z = 19; z >= 13; z--){
+    const nw = map.project(bounds.getNorthWest(), z);
+    const se = map.project(bounds.getSouthEast(), z);
+    if (Math.abs(se.x - nw.x) <= 2048 && Math.abs(se.y - nw.y) <= 2048) return z;
+  }
+  return 13;
+}
+
+const NieblaOverlay = L.ImageOverlay.extend({
+  initialize(bounds, zref, opciones){
+    this._bounds = L.latLngBounds(bounds);
+    this._zref = zref;
+    L.Util.setOptions(this, opciones);
+  },
+  _initImage(){
+    const c = this._image = L.DomUtil.create("canvas", "leaflet-image-layer");
+    if (this._zoomAnimated) L.DomUtil.addClass(c, "leaflet-zoom-animated");
+    c.onselectstart = L.Util.falseFn;
+    c.onmousemove = L.Util.falseFn;
+    const nw = map.project(this._bounds.getNorthWest(), this._zref);
+    const se = map.project(this._bounds.getSouthEast(), this._zref);
+    this._nwZ = nw;
+    c.width  = Math.max(1, Math.round(se.x - nw.x));
+    c.height = Math.max(1, Math.round(se.y - nw.y));
+    this._g = c.getContext("2d");
+    this._pintarBase();
+  },
+  _mpp(){   // metros por píxel del mask, a ZREF, en la latitud del centro
+    return 156543.03392 * Math.cos(this._bounds.getCenter().lat * RAD) / Math.pow(2, this._zref);
+  },
+  _pintarBase(){
+    const g = this._g, w = this._image.width, h = this._image.height;
+    g.globalCompositeOperation = "source-over";
+    g.clearRect(0, 0, w, h);
+    const grad = g.createLinearGradient(0, 0, 0, h);
+    grad.addColorStop(0,   "#1e2b39");
+    grad.addColorStop(.55, "#16212e");
+    grad.addColorStop(1,   "#0f1822");
+    g.fillStyle = grad; g.fillRect(0, 0, w, h);
+    // grano determinista, una sola vez: se lee como territorio, no como error
+    g.globalAlpha = .05;
+    let s = 20250725;
+    const azar = () => (s = (s*1103515245 + 12345) & 0x7fffffff) / 0x7fffffff;
+    for (let i = 0; i < 120; i++){
+      const x = azar()*w, y = azar()*h, r = 22 + azar()*70;
+      const b = g.createRadialGradient(x,y,0,x,y,r);
+      b.addColorStop(0, azar() > .5 ? "#4a5f75" : "#060b12");
+      b.addColorStop(1, "transparent");
+      g.fillStyle = b; g.beginPath(); g.arc(x,y,r,0,7); g.fill();
+    }
+    g.globalAlpha = 1;
+  },
+  revelar(lat, lon){
+    const p = map.project(L.latLng(lat, lon), this._zref).subtract(this._nwZ);
+    const r = Math.max(8, CONFIG.radioNiebla / this._mpp());
+    const g = this._g;
+    g.globalCompositeOperation = "destination-out";
+    const grad = g.createRadialGradient(p.x, p.y, r*0.35, p.x, p.y, r);
+    grad.addColorStop(0,   "rgba(0,0,0,1)");
+    grad.addColorStop(.72, "rgba(0,0,0,.92)");
+    grad.addColorStop(1,   "rgba(0,0,0,0)");
+    g.fillStyle = grad; g.beginPath(); g.arc(p.x, p.y, r, 0, 7); g.fill();
+    g.globalCompositeOperation = "source-over";
+  },
+  reconstruir(rastro){
+    this._pintarBase();
+    for (const [la, lo] of rastro) this.revelar(la, lo);
+  },
+  limpiarTodo(){ this._g.clearRect(0, 0, this._image.width, this._image.height); },
+});
+
+let niebla = null;         // instancia de NieblaOverlay
+let rastroLinea = null;    // L.polyline del recorrido
+let circuloPrec = null;    // L.circle de la incertidumbre del GPS
+
+function refrescarCirculoPrec(){
+  if (!pos) return;
+  const r = Math.max(4, pos.prec || 0);
+  if (!circuloPrec){
+    circuloPrec = L.circle([pos.lat, pos.lon], { radius: r,
+      color: "rgba(61,125,143,.5)", weight: 1,
+      fillColor: "#3d7d8f", fillOpacity: .10, interactive: false }).addTo(map);
+  } else {
+    circuloPrec.setLatLng([pos.lat, pos.lon]); circuloPrec.setRadius(r);
+  }
+}
+
+// spawns como marcadores (aparecen/desaparecen al capturarse)
+let spawnMarcadores = {};
+function refrescarSpawns(){
+  const activos = new Set(spawnsActivos().map(s => s.k));
+  for (const k of Object.keys(spawnMarcadores)){
+    if (!activos.has(k)){ map.removeLayer(spawnMarcadores[k]); delete spawnMarcadores[k]; }
+  }
+  for (const s of spawnsActivos()){
+    if (spawnMarcadores[s.k]) continue;
+    const icon = L.divIcon({ className: "spawn-icono", html: s.medalla || "⭐",
+                             iconSize: [30,30], iconAnchor: [15,15] });
+    spawnMarcadores[s.k] = L.marker([s.lat, s.lon], { icon, interactive: false }).addTo(map);
+  }
+}
+
+function refrescarRastroLinea(){
+  const pts = estado.rastro.map(([la, lo]) => [la, lo]);
+  if (!rastroLinea){
+    rastroLinea = L.polyline(pts, { color: "#c8952f", weight: 2, opacity: .5,
+      lineJoin: "round", lineCap: "round", interactive: false }).addTo(map);
+  } else {
+    rastroLinea.setLatLngs(pts);
+  }
+}
+
+/* Monta el mapa de la zona: niebla, rastro, spawns y vista. Idempotente: una
+   etiqueta recarga la página y esto vuelve a pasar por aquí. */
+let mapaMontado = false;
+function montarMapa(){
+  map.invalidateSize({ animate: false });   // que el mapa sepa su tamaño antes de fitBounds
+  const bounds = boundsDeJuego();
+  ZREF = elegirZref(bounds);
+  // La vista tiene que estar puesta ANTES de añadir capas: Leaflet difiere
+  // addLayer hasta que el mapa está "listo" (whenReady), y la niebla necesita
+  // que su canvas exista ya para poder reconstruir el rastro encima.
+  if (!map._loaded){
+    if (pos) map.setView([pos.lat, pos.lon], ZOOM_JUEGO);
+    else map.fitBounds(bounds, { padding: [20,20], maxZoom: ZOOM_JUEGO });
+  }
+  mapaMontado = true;
+  if (niebla) map.removeLayer(niebla);
+  niebla = new NieblaOverlay(bounds, ZREF, { pane: "niebla" }).addTo(map);
+  niebla.reconstruir(estado.rastro);
+  if (!estacionActiva()) niebla.limpiarTodo();   // yincana terminada: mapa entero
+  refrescarRastroLinea();
+  refrescarSpawns();
+  dimensionar();
+}
+
+// dimensiona el lienzo del HUD y avisa a Leaflet del tamaño del contenedor
 function dimensionar(){
   dpr = Math.min(window.devicePixelRatio || 1, 2);
   const r = cajaMapa.getBoundingClientRect();
   W = r.width; H = r.height;
-  for (const c of [cNiebla, cHud]){
-    c.width = Math.round(W*dpr); c.height = Math.round(H*dpr);
-    c.getContext("2d").setTransform(dpr,0,0,dpr,0,0);
-  }
-  calcularRecto();
-
-  // metros por píxel: media de los dos ejes del rectángulo dibujado
-  const anchoM = distancia(E.norte, E.oeste, E.norte, E.este);
-  const altoM  = distancia(E.norte, E.oeste, E.sur,   E.oeste);
-  mPorPx = ((anchoM/recto.w) + (altoM/recto.h)) / 2;
-
+  cHud.width = Math.round(W*dpr); cHud.height = Math.round(H*dpr);
+  gH.setTransform(dpr, 0, 0, dpr, 0, 0);
+  if (map) map.invalidateSize({ animate: false });
   repintar = true;
-  pintarNiebla();
 }
 
-/* La niebla es una capa opaca a la que le vamos abriendo agujeros. */
-function pintarNiebla(){
-  gN.setTransform(dpr,0,0,dpr,0,0);
-  gN.globalCompositeOperation = "source-over";
-  gN.clearRect(0,0,W,H);
-
-  // Terminada la expedición el mapa se queda entero a la vista. Es el premio,
-  // y hace que valga la pena volver a abrir la página después.
-  if (!estacionActiva()) return;
-
-  const g = gN.createLinearGradient(0,0,0,H);
-  g.addColorStop(0,   "#1e2b39");
-  g.addColorStop(.55, "#16212e");
-  g.addColorStop(1,   "#0f1822");
-  gN.fillStyle = g;
-  gN.fillRect(0,0,W,H);
-
-  // grano: manchas sutiles para que se lea como territorio, no como error
-  gN.globalAlpha = .05;
-  let s = 20250725;
-  const azar = () => (s = (s*1103515245 + 12345) & 0x7fffffff) / 0x7fffffff;
-  for (let i=0; i<90; i++){
-    const x = azar()*W, y = azar()*H, r = 22 + azar()*70;
-    const b = gN.createRadialGradient(x,y,0,x,y,r);
-    b.addColorStop(0, azar() > .5 ? "#4a5f75" : "#060b12");
-    b.addColorStop(1, "transparent");
-    gN.fillStyle = b; gN.beginPath(); gN.arc(x,y,r,0,7); gN.fill();
-  }
-  gN.globalAlpha = 1;
-
-  gN.globalCompositeOperation = "destination-out";
-  for (const [la,lo] of estado.rastro){
-    if (dentroDelMapa(la, lo, CONFIG.radioNiebla)) despejar(la, lo);
-  }
-  gN.globalCompositeOperation = "source-over";
-}
-
-function despejar(lat, lon){
-  const [x,y] = aPixel(lat, lon);
-  const r = Math.max(14, CONFIG.radioNiebla / mPorPx);
-  const g = gN.createRadialGradient(x,y,r*0.35, x,y,r);
-  g.addColorStop(0,   "rgba(0,0,0,1)");
-  g.addColorStop(.72, "rgba(0,0,0,.92)");
-  g.addColorStop(1,   "rgba(0,0,0,0)");
-  gN.fillStyle = g;
-  gN.beginPath(); gN.arc(x,y,r,0,7); gN.fill();
-}
-
-/* Cambiar de capítulo es cambiar de imagen, de esquinas y de niebla. Se llama
-   al arrancar y al terminar cada capítulo, así que tiene que ser idempotente:
-   una etiqueta recarga la página y esto vuelve a pasar por aquí. */
+/* En una sola zona no hay capítulos que cambiar: el resto del código sigue
+   llamando a aplicarCapitulo(), que aquí sólo (re)monta el mapa. */
 let capPintado = null;
-
 function aplicarCapitulo(cap){
-  if (cap === capPintado) return;
-  capPintado = cap;
-  E = cap.esquinas;
-  imgMapa.style.display = "";
-  imgMapa.src = cap.mapa;   // al cargar dispara dimensionar(), que repinta
-  dimensionar();            // y esto cubre el caso de que la imagen no llegue
-  if (esAutor) pintarCapitulos();
+  capPintado = cap || capituloActivo();
+  montarMapa();
 }
 
 /* ══════════════════════════════════════════════════════════════
@@ -789,6 +868,7 @@ let pos = null;        // {lat, lon, prec} suavizado
 let distActual = null;
 let dentroSeguidas = 0;
 let sinMovimiento = true;
+let primeraVista = false;   // ya se hizo zoom a la escala de juego al coger señal
 
 const ALFA = 0.4;      // suavizado exponencial contra el temblor del GPS
 
@@ -802,18 +882,24 @@ function alRecibirPosicion(p){
     pos.prec += 0.5*(pr - pos.prec);
   }
 
-  if (esAutor){ refrescarAutor(pr); return; }
+  if (esAutor) return;   // el modo autor v1 está aparcado (lo reemplaza F4)
+
+  refrescarCirculoPrec();
+  // El mapa sigue al jugador (estilo Pokémon Go). En la primera lectura hace
+  // zoom a la escala de juego; luego sólo recentra, sin animar (a 1 Hz se ve a
+  // tirones, y el suavizado ya da continuidad).
+  if (mapaMontado){
+    if (!primeraVista){ primeraVista = true; map.setView([pos.lat, pos.lon], ZOOM_JUEGO); }
+    else map.panTo([pos.lat, pos.lon], { animate: false });
+  }
 
   // El rastro se diezma: sólo guardamos si nos hemos movido de verdad.
   const ult = estado.rastro[estado.rastro.length-1];
   if (!ult || distancia(ult[0], ult[1], pos.lat, pos.lon) > 10){
-    estado.rastro.push([+pos.lat.toFixed(6), +pos.lon.toFixed(6)]);
-    // Se guarda siempre, se pinta sólo si cae en el mapa de este capítulo.
-    if (dentroDelMapa(pos.lat, pos.lon, CONFIG.radioNiebla)){
-      gN.globalCompositeOperation = "destination-out";
-      despejar(pos.lat, pos.lon);
-      gN.globalCompositeOperation = "source-over";
-    }
+    const punto = [+pos.lat.toFixed(6), +pos.lon.toFixed(6)];
+    estado.rastro.push(punto);
+    if (niebla) niebla.revelar(punto[0], punto[1]);   // pica el agujero de golpe
+    if (rastroLinea) rastroLinea.addLatLng(punto);
     guardar(estado);
     sinMovimiento = false;
   }
@@ -906,8 +992,8 @@ function entrarEnZona(){
    integrado (sin spawns) todo esto es un no-op y no cambia nada. */
 const spawnSeguidas = {};
 function spawnsActivos(){
-  const cap = capituloActivo();
-  return SPAWNS.filter(s => s.cap === cap && !estado.capturas.includes(s.k));
+  // Una sola zona: todos los spawns sin capturar están en juego.
+  return SPAWNS.filter(s => !estado.capturas.includes(s.k));
 }
 function comprobarSpawns(){
   if (!pos || !SPAWNS.length) return;
@@ -925,6 +1011,7 @@ function capturarSpawn(s){
   if (estado.capturas.includes(s.k)) return;
   estado.capturas.push(s.k);
   guardar(estado);
+  refrescarSpawns();   // quita su marcador del mapa
   repintar = true;
   // Aviso que no depende de leer, como el de estar encima: suena y vibra.
   abrirAudio();
@@ -953,79 +1040,38 @@ function mostrarToast(txt){
 let quietud = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
 let repintar = true;   // hay algo nuevo que dibujar en el HUD
+let enZoom = false;    // durante la animación de zoom, la proyección miente (bug Leaflet)
+map.on("zoomstart", () => { enZoom = true; });
+map.on("zoomend",   () => { enZoom = false; repintar = true; });
+map.on("move",      () => { repintar = true; });   // al seguir al jugador, recolocar el HUD
 
+/* El HUD dibuja sólo lo animado: marcador y anillos de sónar, en la posición de
+   pantalla del jugador (Leaflet proyecta). El rastro, el círculo de precisión y
+   los spawns son capas de Leaflet: se mueven y escalan solos, sin repintar. */
 function fotograma(t){
   requestAnimationFrame(fotograma);
-  if (!pos) return;
+  if (!pos || !mapaMontado || enZoom) return;
 
   latido(t);   // el sónar suena aunque no se repinte
 
-  /* Lejos de la estación no hay anillos girando: el HUD dibuja exactamente lo
-     mismo fotograma tras fotograma. Repintarlo sesenta veces por segundo son
-     tres días de pantalla encendida tirando de batería para nada. */
+  /* Lejos de la estación no hay anillos girando: el HUD dibuja lo mismo
+     fotograma tras fotograma. Repintarlo a 60 fps son tres días de pantalla
+     tirando de batería para nada. */
   const animando = !quietud && distActual != null && distActual < CONFIG.radioAudio;
   if (!animando && !repintar) return;
   repintar = false;
 
   gH.clearRect(0,0,W,H);
 
-  // rastro caminado, en oro tenue: el mapa que estáis levantando
-  if (estado.rastro.length > 1){
-    gH.beginPath();
-    let seguido = false;   // si la pisada anterior también caía en este mapa
-    for (const [la,lo] of estado.rastro){
-      const aqui = dentroDelMapa(la, lo, CONFIG.radioNiebla);
-      if (aqui){
-        const [x,y] = aPixel(la,lo);
-        seguido ? gH.lineTo(x,y) : gH.moveTo(x,y);
-      }
-      seguido = aqui;
-    }
-    gH.strokeStyle = "rgba(200,149,47,.28)";
-    gH.lineWidth = 1.5; gH.lineJoin = "round"; gH.lineCap = "round";
-    gH.stroke();
-  }
-
-  // spawns del capítulo, en oro con su icono: puntos extra por recoger
-  for (const s of spawnsActivos()){
-    if (!dentroDelMapa(s.lat, s.lon)) continue;
-    const [sx,sy] = aPixel(s.lat, s.lon);
-    gH.beginPath(); gH.arc(sx, sy, 6, 0, 7);
-    gH.fillStyle = "rgba(200,149,47,.92)"; gH.fill();
-    gH.strokeStyle = "#0d151d"; gH.lineWidth = 2; gH.stroke();
-    if (s.medalla){
-      gH.font = "15px system-ui, sans-serif";
-      gH.textAlign = "center"; gH.textBaseline = "middle";
-      gH.fillText(s.medalla, sx, sy - 13);
-      gH.textAlign = "start"; gH.textBaseline = "alphabetic";
-    }
-  }
-
-  // Fuera del recuadro el marcador se pega al borde por el que se han salido,
-  // en hueco. Desaparecer sin más parecería que la aplicación se ha colgado.
-  const fuera = !dentroDelMapa(pos.lat, pos.lon);
-  let [x,y] = aPixel(pos.lat, pos.lon);
-  if (fuera){
-    x = Math.max(recto.x + 9, Math.min(recto.x + recto.w - 9, x));
-    y = Math.max(recto.y + 9, Math.min(recto.y + recto.h - 9, y));
-  }
+  const [x,y] = aPixel(pos.lat, pos.lon);
   const proximidad = distActual == null ? 0
       : Math.max(0, Math.min(1, 1 - (distActual - CONFIG.radioZona) /
                                    (CONFIG.radioAudio - CONFIG.radioZona)));
   const t2 = (distActual != null && distActual <= CONFIG.radioZona) ? 1 : proximidad;
   const color = mezcla("#3d7d8f", "#f2b134", t2);
 
-  // círculo de incertidumbre del GPS
-  if (pos.prec && !fuera){
-    gH.beginPath();
-    gH.arc(x, y, Math.max(6, pos.prec/mPorPx), 0, 7);
-    gH.fillStyle = "rgba(61,125,143,.11)";
-    gH.strokeStyle = "rgba(61,125,143,.28)";
-    gH.lineWidth = 1; gH.fill(); gH.stroke();
-  }
-
   // anillos de sónar, más rápidos cuanto más cerca
-  if (!quietud && !fuera && distActual != null && distActual < CONFIG.radioAudio){
+  if (!quietud && distActual != null && distActual < CONFIG.radioAudio){
     const periodo = 1900 - proximidad*1350;
     for (let k=0; k<2; k++){
       const f = (((t + k*periodo/2) % periodo) / periodo);
@@ -1036,14 +1082,10 @@ function fotograma(t){
     }
   }
 
-  // marcador
-  gH.beginPath(); gH.arc(x,y,7.5,0,7);
-  if (fuera){
-    gH.strokeStyle = color; gH.lineWidth = 2.5; gH.stroke();
-  } else {
-    gH.fillStyle = color; gH.fill();
-    gH.strokeStyle = "#0d151d"; gH.lineWidth = 2.5; gH.stroke();
-  }
+  // marcador del jugador
+  gH.beginPath(); gH.arc(x, y, 7.5, 0, 7);
+  gH.fillStyle = color; gH.fill();
+  gH.strokeStyle = "#0d151d"; gH.lineWidth = 2.5; gH.stroke();
 }
 
 function mezcla(a, b, t){
@@ -1217,35 +1259,12 @@ function celebrar(est){
   mostrarPista();
 }
 
-/* Al cerrar la medalla puede que la estación siguiente esté en otro mapa. Ahí
-   no se cambia de golpe: primero se les avisa de que hay que desplazarse, que
-   si no aparece un mapa desconocido sin explicación. */
+/* Una sola zona: al cerrar la medalla no hay traslado ni cambio de mapa. O
+   quedan estaciones (siguiente pista) o se acabó (cierre). */
 function seguirDespuesDelLogro(){
   document.getElementById("capaLogro").hidden = true;
-  const cap = capituloActivo();
-  if (cap !== capPintado){
-    mostrarTraslado(cap);
-    // En la demo no hay nadie pulsando, pero la pantalla se enseña igual: es
-    // parte de lo que quieres que vea quien la esté mirando.
-    if (esDemo) setTimeout(() => {
-      document.getElementById("capaTraslado").hidden = true;
-      aplicarCapitulo(cap);
-      mostrarPista();
-    }, 2400);
-    return;
-  }
-  aplicarCapitulo(cap);
   if (!estacionActiva()){ mostrarFinal(); return; }
   mostrarPista();
-}
-
-function mostrarTraslado(cap){
-  const t = cap.traslado || {};
-  document.getElementById("trasladoIcono").textContent  = t.icono  || "🚶";
-  document.getElementById("trasladoTitulo").textContent = t.titulo || cap.nombre;
-  document.getElementById("trasladoTexto").textContent  = t.texto  || "";
-  document.getElementById("btnTraslado").textContent    = t.boton  || "Vamos";
-  document.getElementById("capaTraslado").hidden = false;
 }
 
 function avisoSimple(titulo, texto){
@@ -1267,7 +1286,7 @@ function metrosCaminados(){
 }
 
 function mostrarFinal(){
-  pintarNiebla();      // ya no queda estación activa: esto deja el mapa entero
+  if (niebla) niebla.limpiarTodo();   // sin estación activa: se disuelve la niebla
   const cont = document.getElementById("finMedallas");
   cont.innerHTML = "";
   TODAS.forEach((e, i) => {
@@ -1291,29 +1310,10 @@ function mostrarFinal(){
     setTimeout(() => pitido([660,880,1100,1320,1560][i], 220, .24), t));
 }
 
-/* Con la yincana terminada los dos mapas quedan despejados. La barra deja
-   pasar de uno a otro para ver el recorrido entero de los tres días. */
-function montarBarraFinal(){
-  if (CAPS.length < 2 || document.getElementById("finBarra")) return;
-  const barra = document.createElement("div");
-  barra.id = "finBarra";
-  barra.innerHTML = '<span class="sello">Recorrido</span>';
-  for (const c of CAPS){
-    const b = document.createElement("button");
-    b.textContent = c.nombre;
-    b.onclick = () => { aplicarCapitulo(c); marcarBarraFinal(); };
-    barra.appendChild(b);
-  }
-  document.body.appendChild(barra);
-  marcarBarraFinal();
-}
-
-function marcarBarraFinal(){
-  const barra = document.getElementById("finBarra");
-  if (!barra) return;
-  barra.querySelectorAll("button").forEach((b, i) =>
-    b.classList.toggle("activo", CAPS[i] === capPintado));
-}
+/* En una sola zona no hay varios mapas que repasar: al terminar, la niebla se
+   disuelve entera y queda el mapa vivo, que ya se puede mirar y arrastrar. */
+function montarBarraFinal(){}
+function marcarBarraFinal(){}
 
 /* ══════════════════════════════════════════════════════════════
    10 · PANTALLA ENCENDIDA
@@ -1518,45 +1518,17 @@ function pintarSalida(){
     puntos.map(p => `${p.nombre}\n${location.origin}${location.pathname}?k=${p.k}`).join("\n\n");
 }
 
+/* El modo autor de la v1 (marcar puntos y copiar URLs) queda aparcado: en la v2
+   la colocación de etiquetas se hace escaneando + GPS con sesión de admin (F4).
+   Mientras tanto, ?modo=autor muestra un aviso en vez del panel viejo. */
 if (esAutor){
-  document.body.classList.add("autor");
-  document.getElementById("autor").hidden = false;
   document.getElementById("capaInicio").hidden = true;
-  pintarLista();
-  pintarSalida();
-  requestAnimationFrame(fotogramaAutor);
-
-  document.getElementById("aMarcar").onclick = () => {
-    if (!pos) return alert("Todavía no hay posición.");
-    const nombre = (document.getElementById("aNombre").value || "").trim()
-                || "Punto " + (puntos.length + 1);
-    puntos.push({ k:claveAzar(), nombre,
-                  lat:+pos.lat.toFixed(6), lon:+pos.lon.toFixed(6) });
-    guardarPuntos();
-    document.getElementById("aNombre").value = "";
-    document.getElementById("aN").textContent = "0";
-    pintarLista();
-    pintarSalida();
-    if (navigator.vibrate) navigator.vibrate(60);
-  };
-
-  document.getElementById("aBorrar").onclick = () => {
-    if (!confirm("¿Borrar todos los puntos marcados?")) return;
-    puntos = [];
-    try{ localStorage.removeItem("yincana.autor"); }catch(e){}
-    pintarLista();
-    pintarSalida();
-  };
-
-  document.getElementById("aCopiar").onclick = () => {
-    const t = document.getElementById("aSalida").textContent;
-    (navigator.clipboard ? navigator.clipboard.writeText(t) : Promise.reject())
-      .then(() => document.getElementById("aCopiar").textContent = "Copiado")
-      .catch(() => document.getElementById("aCopiar").textContent = "Selecciona el texto y cópialo a mano");
-  };
-
-  navigator.geolocation.watchPosition(alRecibirPosicion, alFallarPosicion,
-    { enableHighAccuracy:true, maximumAge:0, timeout:20000 });
+  const av = document.getElementById("autor");
+  av.hidden = false;
+  av.innerHTML = '<h2>Modo autor</h2><p class="aviso">La colocación de etiquetas '
+    + 'se hará escaneando cada etiqueta con la sesión de admin (en preparación). '
+    + 'El panel viejo de marcar puntos se ha retirado.</p>';
+  document.body.classList.add("autor");
 }
 
 /* ══════════════════════════════════════════════════════════════
@@ -1567,15 +1539,11 @@ if (esAutor){
    ══════════════════════════════════════════════════════════════ */
 let demoJugando = true, demoVelocidad = 4, demoTramo = 0, demoT = 0, demoPausa = 0;
 
-/* Por cada capítulo: su punto de inicio y sus estaciones. El tramo que une un
-   capítulo con el siguiente no se camina — es más de un kilómetro de carretera
-   fuera de los dos mapas — se salta, que es lo que harán ellos en coche. */
+/* Una sola zona: la demo empieza en el inicio del primer capítulo y camina por
+   todas las estaciones en orden, sobre el mismo mapa vivo (sin saltos). */
 function rutaDemo(){
-  const r = [];
-  CAPS.forEach((cap, i) => {
-    r.push({ p:cap.inicioDemo, salto:i > 0 });
-    for (const e of cap.estaciones) r.push({ p:[e.lat, e.lon], est:e });
-  });
+  const r = [{ p: CAPS[0].inicioDemo }];
+  for (const e of TODAS) r.push({ p:[e.lat, e.lon], est:e });
   return r;
 }
 
@@ -1651,9 +1619,8 @@ function montarDemo(){
     document.getElementById("capaLogro").hidden = true;
     document.getElementById("capaTraslado").hidden = true;
     document.getElementById("capaFinal").hidden = true;
-    document.getElementById("finBarra")?.remove();
-    aplicarCapitulo(CAPS[0]);
-    pintarNiebla(); pintarMedallero(); mostrarPista();
+    aplicarCapitulo(capituloActivo());   // remonta el mapa con la niebla entera
+    pintarMedallero(); mostrarPista();
   };
 
   setInterval(pasoDemo, 250);
@@ -1664,9 +1631,7 @@ function montarDemo(){
    ══════════════════════════════════════════════════════════════ */
 document.getElementById("nombrePueblo").textContent = CONFIG.pueblo;
 document.title = "Expedición · " + CONFIG.pueblo;
-imgMapa.onload  = () => dimensionar();
-imgMapa.onerror = () => { imgMapa.style.display = "none"; dimensionar(); };
-aplicarCapitulo(capituloActivo());   // el mapa que toque según lo ya abierto
+aplicarCapitulo(capituloActivo());   // monta el mapa vivo y la niebla de la zona
 
 window.addEventListener("resize", dimensionar);
 if (window.visualViewport) visualViewport.addEventListener("resize", dimensionar);

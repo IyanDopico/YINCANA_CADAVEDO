@@ -10,11 +10,20 @@ responde como debe. Sirve para validar cambios sin salir de casa.
 Devuelve 0 si pasa todo, 1 si algo falla.
 """
 
-import argparse, contextlib, functools, http.server, os, socketserver, sys, tempfile, threading, math, json, re
+import argparse, base64, contextlib, functools, http.server, os, socketserver, sys, tempfile, threading, math, json, re
 from pathlib import Path
 from playwright.sync_api import sync_playwright
 
 import servidor   # el backend: se prueba de punta a punta contra el cliente
+
+# Tesela de mentira (PNG gris 1x1) para no llamar a OSM en las pruebas: el juego
+# usa el mapa vivo, pero aquí sólo importa la lógica, no la imagen del mapa.
+_PNG_TESELA = base64.b64decode(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==")
+
+def teselas_falsas(ctx):
+    ctx.route("**/tiles/**", lambda r: r.fulfill(
+        status=200, content_type="image/png", body=_PNG_TESELA))
 
 RAIZ = Path(__file__).parent.resolve()
 BASE = None          # se fija al arrancar el servidor, con puerto libre
@@ -184,17 +193,12 @@ def main():
             comprobar(m >= holgura,
                       f"la estación {k} no queda pegada al borde del mapa",
                       f"a {m:.0f} m del borde, y hacen falta {holgura:.0f}")
-    mapas = [c["mapa"] for c in caps]
-    comprobar(all(mapas) and len(set(mapas)) == len(mapas),
-              "cada capítulo tiene su propia imagen de mapa", str(mapas))
-
-    # Si renombras un mapa en el CONFIG y no lo tocas en sw.js, la imagen no se
-    # cachea y el día sin cobertura sale la retícula en vez del pueblo.
+    # v2: el mapa es vivo (teselas), ya no hay imágenes pre-generadas por
+    # capítulo. Lo que sí tiene que cachear sw.js es Leaflet, o la página no
+    # arranca sin cobertura.
     sw = (RAIZ / "sw.js").read_text(encoding="utf-8")
-    sin_cachear = [m for m in mapas if m and m not in sw]
-    comprobar(not sin_cachear,
-              "sw.js cachea las imágenes de todos los capítulos",
-              "falta " + ", ".join(sin_cachear))
+    comprobar("vendor/leaflet/leaflet.js" in sw,
+              "sw.js cachea Leaflet para funcionar sin cobertura")
 
     srv = servir()
     esquinas = caps[0]["esquinas"]
@@ -209,6 +213,7 @@ def main():
             is_mobile=True, has_touch=True, permissions=["geolocation"],
             geolocation={"latitude": origen[0], "longitude": origen[1],
                          "accuracy": 9})
+        teselas_falsas(ctx)
         pg = ctx.new_page()
         errores = []
         pg.on("pageerror", lambda e: errores.append(str(e)))
@@ -278,15 +283,17 @@ def main():
                   pg.eval_on_selector("body", "e => e.className"))
 
         # ── 3 · alineación niebla / mapa ────────────────────────────────
-        # Esta es la que pilló el fallo del object-fit: si la proyección se
-        # desvía, el agujero de la niebla no cae donde está el jugador.
+        # Con el mapa vivo, la niebla es un canvas anclado a coordenadas: el
+        # agujero tiene que caer justo donde está el jugador (lo proyecta
+        # Leaflet). Se lee el alfa del canvas de la capa de niebla.
         print("\nAlineación")
         alfa = pg.evaluate("""() => {
-            const [x, y] = aPixel(pos.lat, pos.lon);
-            const g = document.getElementById('niebla').getContext('2d');
-            const aqui  = g.getImageData(Math.round(x*dpr), Math.round(y*dpr), 1, 1).data[3];
+            const nube = niebla._image, g = nube.getContext('2d');
+            const p = map.project([pos.lat, pos.lon], niebla._zref).subtract(niebla._nwZ);
+            const aqui  = g.getImageData(Math.round(p.x), Math.round(p.y), 1, 1).data[3];
             const lejos = g.getImageData(2, 2, 1, 1).data[3];
-            return { aqui, lejos, x, y, W, H };
+            const cp = map.latLngToContainerPoint([pos.lat, pos.lon]);
+            return { aqui, lejos, x: cp.x, y: cp.y, W, H };
         }""")
         comprobar(alfa["aqui"] < 40,
                   "la niebla está despejada justo donde está el jugador",
@@ -298,26 +305,24 @@ def main():
                   "el marcador cae dentro del lienzo",
                   f"({alfa['x']:.0f}, {alfa['y']:.0f}) en {alfa['W']}x{alfa['H']}")
 
-        # Tres días caminando son un par de miles de pisadas guardadas, y la
-        # niebla se repinta entera cada vez que gira el móvil. Si eso tarda, se
-        # nota en la mano justo cuando le dan la vuelta para enseñar el mapa.
-        ms = pg.evaluate("""(caja) => {
-            const guardado = estado.rastro;
+        # Tres días caminando son un par de miles de pisadas. Ahora la niebla no
+        # se repinta al mover ni al hacer zoom (Leaflet la desplaza), sólo al
+        # (re)montar el mapa: reconstruir con 2000 pisadas tiene que ir sobrado.
+        ms = pg.evaluate("""() => {
+            const b = niebla._bounds, N = b.getNorth(), S = b.getSouth(),
+                  E = b.getEast(), Wt = b.getWest();
             const r = [];
             for (let i = 0; i < 2000; i++)
-                r.push([caja.sur   + Math.random()*(caja.norte - caja.sur),
-                        caja.oeste + Math.random()*(caja.este  - caja.oeste)]);
-            estado.rastro = r;
+                r.push([S + Math.random()*(N-S), Wt + Math.random()*(E-Wt)]);
             const t0 = performance.now();
-            pintarNiebla();
+            niebla.reconstruir(r);
             const t = performance.now() - t0;
-            estado.rastro = guardado;
-            pintarNiebla();
+            niebla.reconstruir(estado.rastro);   // restaura lo real
             return t;
-        }""", caps[0]["esquinas"])
-        comprobar(ms < 400,
-                  f"repintar la niebla con 2000 pisadas: {ms:.0f} ms",
-                  "por encima de 400 ms se nota el tirón al girar el móvil")
+        }""")
+        comprobar(ms < 800,
+                  f"reconstruir la niebla con 2000 pisadas: {ms:.0f} ms",
+                  "sólo pasa al montar el mapa, pero aun así no puede tardar")
 
         # ── 4 · desbloqueo por etiqueta ─────────────────────────────────
         print("\nEtiquetas NFC")
@@ -374,48 +379,29 @@ def main():
                   "y lo dice, en vez de quedarse callada",
                   pg.inner_text("#logroNombre"))
 
-        # ── 6 · cambio de capítulo ──────────────────────────────────────
-        if len(caps) > 1:
-            print("\nCapítulos")
-            ultima = caps[0]["estaciones"][-1][0]
-            pg.goto(f"{BASE}?k={ultima}")
-            pg.wait_for_timeout(900)
-            comprobar(pg.evaluate("capPintado.id") == caps[0]["id"],
-                      "la última medalla no cambia el mapa por detrás",
-                      pg.evaluate("capPintado.id"))
-
-            pg.click("#btnSeguir")
-            pg.wait_for_timeout(500)
-            comprobar(not pg.is_hidden("#capaTraslado"),
-                      "al acabar el capítulo avisa del traslado")
-            comprobar(pg.evaluate("capPintado.id") == caps[0]["id"],
-                      "y espera a que pulsen para cambiar de mapa")
-            captura("5-traslado")
-
-            pg.click("#btnTraslado")
-            pg.wait_for_timeout(700)
-            comprobar(pg.evaluate("capPintado.id") == caps[1]["id"],
-                      "al pulsar se abre el mapa del capítulo siguiente",
-                      pg.evaluate("capPintado.id"))
-            comprobar(pg.is_hidden("#capaTraslado"),
-                      "la pantalla de traslado se quita")
-            comprobar(pg.evaluate("E.norte") == caps[1]["esquinas"]["norte"],
-                      "la proyección pasa a las esquinas del capítulo nuevo",
-                      str(pg.evaluate("E.norte")))
-
-            # Lo que más fácil se rompe al partir el mapa: que las pisadas del
-            # capítulo anterior abran agujeros en el del siguiente, que está a
-            # más de un kilómetro.
-            claros = pg.evaluate("""() => {
-                const c = document.getElementById('niebla');
-                const d = c.getContext('2d').getImageData(0,0,c.width,c.height).data;
-                let n = 0;
-                for (let i = 3; i < d.length; i += 4) if (d[i] < 40) n++;
-                return n;
+        # ── 6 · una sola zona: sin traslado ni cambio de mapa ───────────
+        # En la v2 todo es un mapa vivo: abrir una estación no muestra pantalla
+        # de traslado ni reinicia la niebla ya despejada.
+        if len(todas) > 1:
+            print("\nUna sola zona")
+            despejado_antes = pg.evaluate("""() => {
+                const c = niebla._image, d = c.getContext('2d').getImageData(0,0,c.width,c.height).data;
+                let n = 0; for (let i = 3; i < d.length; i += 4) if (d[i] < 40) n++; return n;
             }""")
-            comprobar(claros == 0,
-                      "el mapa nuevo empieza con la niebla entera",
-                      f"{claros} píxeles ya despejados")
+            pg.goto(f"{BASE}?k={todas[1][0]}")
+            pg.wait_for_timeout(700)
+            if not pg.is_hidden("#capaLogro"):
+                pg.click("#btnSeguir")
+                pg.wait_for_timeout(500)
+            comprobar(pg.is_hidden("#capaTraslado"),
+                      "al abrir una estación no sale pantalla de traslado")
+            despejado_ahora = pg.evaluate("""() => {
+                const c = niebla._image, d = c.getContext('2d').getImageData(0,0,c.width,c.height).data;
+                let n = 0; for (let i = 3; i < d.length; i += 4) if (d[i] < 40) n++; return n;
+            }""")
+            comprobar(despejado_ahora >= despejado_antes,
+                      "la niebla despejada no se reinicia al abrir una estación",
+                      f"{despejado_antes} -> {despejado_ahora}")
 
         # ── 7 · terminar la yincana ─────────────────────────────────────
         print("\nFinal")
@@ -447,9 +433,9 @@ def main():
                   "y dice dónde está el tesoro de verdad")
         captura("5-final")
 
-        # El premio: el mapa entero despejado, sin una brizna de niebla.
+        # El premio: la niebla se disuelve entera y queda el mapa vivo a la vista.
         opacos = pg.evaluate("""() => {
-            const c = document.getElementById('niebla');
+            const c = niebla._image;
             const d = c.getContext('2d').getImageData(0,0,c.width,c.height).data;
             let n = 0;
             for (let i = 3; i < d.length; i += 4) if (d[i] > 40) n++;
@@ -461,14 +447,6 @@ def main():
         pg.click("#btnFinal")
         pg.wait_for_timeout(400)
         comprobar(pg.is_hidden("#capaFinal"), "el botón cierra la pantalla final")
-        if len(caps) > 1:
-            comprobar(pg.is_visible("#finBarra"),
-                      "y deja la barra para repasar los dos mapas")
-            pg.click("#finBarra button:first-of-type")
-            pg.wait_for_timeout(500)
-            comprobar(pg.evaluate("capPintado.id") == caps[0]["id"],
-                      "que devuelve al mapa del primer capítulo",
-                      pg.evaluate("capPintado.id"))
 
         # ── 8 · reinicio ────────────────────────────────────────────────
         dialogos.clear()
@@ -526,83 +504,14 @@ def main():
             pg.wait_for_timeout(400)
 
         # ── 10 · modo autor ─────────────────────────────────────────────
-        print("\nModo autor")
+        # El modo autor v1 (marcar puntos + copiar URLs) queda aparcado en la
+        # v2: la colocación de etiquetas pasa a ser por escaneo + GPS con sesión
+        # de admin (F4). Sólo se comprueba que ?modo=autor no revienta.
+        print("\nModo autor (aparcado)")
         pg.goto(f"{BASE}?modo=autor")
-        pg.wait_for_timeout(900)
-        comprobar(not pg.is_hidden("#autor"), "se abre el panel de autor")
-        comprobar(pg.inner_text("#aLat") != "—", "muestra la posición en vivo")
-        pg.fill("#aNombre", "El lavadero")
-        pg.click("#aMarcar")
-        pg.wait_for_timeout(400)
-        salida = pg.inner_text("#aSalida")
-        comprobar('nombre:"El lavadero"' in salida,
-                  "el punto marcado sale con su nombre")
-        comprobar(re.search(r'k:"[0-9a-f]{6}"', salida) is not None,
-                  "genera una clave aleatoria de 6 dígitos hex")
-        comprobar("?k=" in salida, "incluye la URL para grabar en la etiqueta")
-
-        # Lo que deja salir a marcar: ver el punto sobre el mapa en vez de
-        # fiarse de seis decimales.
-        comprobar(pg.is_hidden("footer"), "el panel deja sitio al mapa")
-        comprobar(pg.is_hidden("#niebla"), "en modo autor el mapa se ve sin niebla")
-        alfa_punto = pg.evaluate("""() => {
-            const p = JSON.parse(localStorage.getItem('yincana.autor')).slice(-1)[0];
-            const [x, y] = aPixel(p.lat, p.lon);
-            const g = document.getElementById('hud').getContext('2d');
-            return g.getImageData(Math.round(x*dpr), Math.round(y*dpr), 1, 1).data[3];
-        }""")
-        comprobar(alfa_punto > 200, "el punto marcado se dibuja sobre el mapa",
-                  f"alfa={alfa_punto}")
-        captura("6-autor")
-
-        # Y el aviso: un punto fuera de todos los recuadros no se vería en el
-        # juego, y eso no puedes descubrirlo con los críos delante.
-        lejos = (min(c["esquinas"]["sur"] for c in caps) - 0.02,
-                 min(c["esquinas"]["oeste"] for c in caps) - 0.02)
-        for _ in range(3):
-            ctx.set_geolocation({"latitude": lejos[0], "longitude": lejos[1],
-                                 "accuracy": 8})
-            pg.wait_for_timeout(350)
-        pg.fill("#aNombre", "Punto perdido")
-        pg.click("#aMarcar")
-        pg.wait_for_timeout(400)
-        comprobar(not pg.is_hidden("#aAlerta"),
-                  "avisa de que un punto cae fuera de todos los recuadros")
-        comprobar("FUERA DE TODOS LOS MAPAS" in pg.inner_text("#aSalida"),
-                  "y lo aparta en la salida para que no pase inadvertido")
-
-        # Marcar bien un punto son treinta minutos parado esperando precisión:
-        # que uno salga torcido no puede obligar a repetir los demás.
-        filas = pg.eval_on_selector_all("#aLista .item", "e => e.length")
-        comprobar(filas == 2, "la lista enseña los puntos marcados", f"{filas}")
-        pg.eval_on_selector("#autor", "e => e.scrollTop = e.scrollHeight")
-        captura("6b-autor-lista")
-        pg.click("#aLista .item:last-child button")
-        pg.wait_for_timeout(400)
-        filas = pg.eval_on_selector_all("#aLista .item", "e => e.length")
-        comprobar(filas == 1, "se puede borrar uno suelto sin tocar los otros",
-                  f"quedan {filas}")
-        comprobar("El lavadero" in pg.inner_text("#aLista"),
-                  "y el que queda es el bueno")
-        comprobar(pg.is_hidden("#aAlerta"),
-                  "y el aviso de fuera del mapa se retira con él")
-
-        # Dentro del mapa pero pegado al borde: cabe, pero la pisada despeja un
-        # círculo cortado. Hay que verlo al marcarlo, no en el pueblo.
-        e0 = caps[0]["esquinas"]
-        borde = (e0["sur"] + (e0["norte"] - e0["sur"]) * 0.5,
-                 e0["oeste"] + 0.0002)
-        for _ in range(12):
-            ctx.set_geolocation({"latitude": borde[0], "longitude": borde[1],
-                                 "accuracy": 8})
-            pg.wait_for_timeout(250)
-        pg.fill("#aNombre", "Junto al borde")
-        pg.click("#aMarcar")
-        pg.wait_for_timeout(400)
-        fila = pg.inner_text("#aLista .item:last-child")
-        comprobar("del borde" in fila,
-                  "avisa de un punto que cabe pero se queda pegado al borde",
-                  fila.replace("\n", " "))
+        pg.wait_for_timeout(700)
+        comprobar(not pg.is_hidden("#autor"),
+                  "?modo=autor muestra el aviso de que está en preparación")
 
         # ── 11 · modo demo ──────────────────────────────────────────────
         # Tiene que funcionar sin permiso de geolocalización: es su motivo de
@@ -611,6 +520,7 @@ def main():
         ctx2 = nav.new_context(viewport={"width": 390, "height": 844},
                                device_scale_factor=2, is_mobile=True,
                                has_touch=True)          # sin permisos ni GPS
+        teselas_falsas(ctx2)
         pd = ctx2.new_page()
         err2 = []
         pd.on("pageerror", lambda e: err2.append(str(e)))
@@ -767,6 +677,7 @@ def main():
                 is_mobile=True, has_touch=True, permissions=["geolocation"],
                 geolocation={"latitude": origen[0], "longitude": origen[1],
                              "accuracy": 9})
+            teselas_falsas(ctx3)
             pe = ctx3.new_page()
             err3 = []
             pe.on("pageerror", lambda e: err3.append(str(e)))
@@ -802,6 +713,7 @@ def main():
                 is_mobile=True, has_touch=True, permissions=["geolocation"],
                 geolocation={"latitude": origen[0], "longitude": origen[1],
                              "accuracy": 9})
+            teselas_falsas(ctx4)
             pf = ctx4.new_page()
             err4 = []
             pf.on("pageerror", lambda e: err4.append(str(e)))
