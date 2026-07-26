@@ -22,7 +22,7 @@ explicarle qué es Web Mercator ni qué es el RSSI.
 ## Órdenes
 
 ```bash
-python pruebas.py               # 83 comprobaciones con GPS simulado (incluye servidor)
+python pruebas.py               # 92 comprobaciones con GPS simulado (incluye servidor)
 python pruebas.py --capturas    # además deja pantallazos en capturas/
 python pruebas.py --ver         # con navegador visible, para depurar
 python pruebas_servidor.py      # pruebas del backend, sin navegador ni red
@@ -157,6 +157,34 @@ login, el progreso de cada uno se retoma por usuario si cambia de móvil.
 Esto sustituye al modelo v1 (secuencia ordenada + perdón por rastro,
 `perdonarSiPasaronCerca`), que ya no existe: en una carrera no hay huecos que
 perdonar.
+
+**Cada uno con su bicho y su color (`QUIENES`).** Himilce 🦊 `#8a6fb0`, Orián 🐢
+`#4f9e78`, admin 🧭 `#c8952f` —los mismos del login—. Se usan en la cabecera
+(`#yo`), en el arranque personalizado ("A por ellas, Orián" con su bicho en
+grande), en el aro del marcador del mapa y en el tanteo del admin. En una
+carrera individual la partida tiene que sentirse suya, y al de 6 su tortuga le
+dice de quién es esto mucho antes que su nombre escrito. **El relleno del
+marcador sigue siendo el frío/caliente**: eso es la guía, no se toca; su color
+va sólo en el aro de fuera.
+
+**La celebración es la mitad del juego para el de 6.** Al encontrar una:
+confeti (`soltarConfeti()`, `<i>` con animación CSS, se limpian solos a los
+3,2 s), halo dorado en la medalla, brinco del bicho de la cabecera
+(`brincarAvatar()`), fanfarria (`fanfarria()`, escala más larga en la última) y
+**`#logroCuenta`: un punto de oro por encontrada y uno hueco por cada una que
+falta**. Ese es el marcador que entiende sin leer. Todo se salta con
+`prefers-reduced-motion`.
+
+**El cronómetro (`estado.comenzado`) arranca en la primera salida, no en cada
+carga.** Tocar una etiqueta recarga la página: si se reiniciara ahí, el tiempo
+final saldría siempre a cero. Pasa por `sanear()` y se muestra en el cierre
+(`tiempoDeCarrera()`), que se calla si sale un disparate (reloj movido).
+
+**El marcador de carrera vive sólo en el panel del admin**
+(`marcadorDeCarrera()`): barras, tanteo y a qué hora encontró cada uno la
+última, con los datos de `/api/hallazgos`. En el móvil de cada crío **no puede
+aparecer el rival** —hay una comprobación en `pruebas.py` que lo vigila— y
+sigue sin haber ganador automático: lo canta quien vaya con ellos.
 
 **El admin coloca las etiquetas escaneándolas.** Escanear `?k=` con sesión de
 admin no desbloquea: abre "Colocar etiqueta" y guarda el GPS actual como

@@ -84,6 +84,25 @@ header{
 /* separación entre capítulos en el medallero */
 .corte{width:1px; height:10px; background:var(--tinta); margin:0 3px}
 
+/* Quién eres, en la cabecera. Es su bicho y su color: al de 6, que no lee, es lo
+   que le dice que ésta es SU expedición y no la de su prima. */
+.quiensoy{display:flex; align-items:center; gap:10px; min-width:0}
+#yo{
+  display:flex; align-items:center; justify-content:center;
+  width:34px; height:34px; border-radius:50%; flex-shrink:0; font-size:20px;
+  border:2px solid var(--c-jugador, var(--tinta));
+  background:color-mix(in srgb, var(--c-jugador, #3d7d8f) 22%, transparent);
+  box-shadow:0 0 10px color-mix(in srgb, var(--c-jugador, #3d7d8f) 45%, transparent);
+}
+#yo[hidden]{display:none}
+/* Al encontrar una, el bicho da un salto: el medallero queda lejos de sus ojos,
+   que están en el instrumento de abajo. */
+#yo.salta{animation:brinco .7s cubic-bezier(.2,1.4,.4,1)}
+@keyframes brinco{
+  0%{transform:scale(1)} 35%{transform:scale(1.35) rotate(-12deg)}
+  70%{transform:scale(.94) rotate(6deg)} 100%{transform:scale(1)}
+}
+
 /* ---------- MAPA ---------- */
 #lienzos{
   flex:1 1 auto; position:relative; overflow:hidden;
@@ -209,10 +228,38 @@ body.encima footer{
 .medalla{
   font-size:76px; line-height:1;
   animation:aterriza .55s cubic-bezier(.2,1.4,.4,1);
+  /* Halo dorado detrás del sello: el hallazgo tiene que sentirse premio. */
+  filter:drop-shadow(0 0 18px rgba(200,149,47,.55));
 }
 @keyframes aterriza{
   0%{transform:scale(.2) rotate(-22deg); opacity:0}
   100%{transform:scale(1) rotate(0); opacity:1}
+}
+
+/* Cuántas llevas, en gordo y sin una palabra: para el de 6 esto ES el marcador,
+   y lo lee de un vistazo sin que nadie se lo cuente. */
+.cuenta-gorda{display:flex; gap:11px; justify-content:center; flex-wrap:wrap; margin:0}
+.cuenta-gorda i{
+  width:17px; height:17px; border-radius:50%; font-style:normal;
+  border:2px solid var(--tinta); background:transparent;
+}
+.cuenta-gorda i.hecho{
+  background:var(--oro); border-color:var(--oro);
+  box-shadow:0 0 13px rgba(200,149,47,.7);
+  animation:aterriza .5s cubic-bezier(.2,1.4,.4,1) backwards;
+}
+
+/* Confeti de la medalla. Papelillos de CSS puro: cero librerías y se ve una
+   fiesta. Va por encima de la capa (50) y por debajo de los mandos de demo (70). */
+#confeti{position:fixed; inset:0; z-index:55; pointer-events:none; overflow:hidden}
+#confeti[hidden]{display:none}
+#confeti i{
+  position:absolute; top:-24px; width:9px; height:14px; border-radius:2px;
+  animation:caer cubic-bezier(.35,.1,.7,1) forwards;
+}
+@keyframes caer{
+  0%{transform:translateY(-24px) rotate(0deg); opacity:1}
+  100%{transform:translateY(104vh) rotate(760deg); opacity:.85}
 }
 .sello{
   font-family:var(--sans); font-size:10px; letter-spacing:.24em;
@@ -275,6 +322,29 @@ body.autor #niebla{display:none}
 .campo span:first-child{color:var(--hueso-tenue)}
 .campo b{font-weight:600; font-variant-numeric:tabular-nums}
 .bien{color:#7fc99a} .regular{color:var(--caliente)} .mal{color:#e07b6a}
+
+/* Marcador de la carrera, sólo en el panel del admin: es el único sitio donde se
+   ven los dos a la vez (en sus móviles cada uno va a lo suyo). No canta ganador
+   —eso lo hace quien vaya con ellos—, sólo enseña cómo va la cosa. */
+.carrera{margin:0 0 18px}
+.carrera .corredor{display:flex; align-items:center; gap:9px; padding:6px 0}
+.carrera .bicho{font-size:21px; line-height:1; flex:0 0 auto}
+.carrera .barra-c{
+  flex:1; min-width:40px; height:9px; border-radius:999px;
+  background:var(--tinta); overflow:hidden;
+}
+.carrera .barra-c i{
+  display:block; height:100%; border-radius:999px;
+  background:var(--c); transition:width .6s;
+}
+.carrera .tanteo{
+  font-family:var(--mono); font-size:13px; flex:0 0 auto;
+  color:var(--hueso); font-variant-numeric:tabular-nums;
+}
+.carrera .ultima{
+  font-family:var(--sans); font-size:11px; color:var(--hueso-tenue);
+  margin:2px 0 0 30px;
+}
 #autor input{
   width:100%; margin:16px 0 10px; padding:12px 14px;
   background:var(--niebla-alta); border:1px solid var(--tinta);
@@ -338,9 +408,12 @@ body.autor #niebla{display:none}
 <body>
 
 <header>
-  <div>
-    <span class="rotulo">Expedición</span>
-    <span class="pueblo" id="nombrePueblo">—</span>
+  <div class="quiensoy">
+    <span id="yo" hidden aria-hidden="true">🧭</span>
+    <div>
+      <span class="rotulo">Expedición</span>
+      <span class="pueblo" id="nombrePueblo">—</span>
+    </div>
   </div>
   <div class="medallero" id="medallero"></div>
   <button id="btnAdmin" hidden aria-label="Panel de estaciones">⚙</button>
@@ -393,6 +466,7 @@ body.autor #niebla{display:none}
 
 <!-- Pantalla de arranque -->
 <div class="capa" id="capaInicio">
+  <div class="medalla" id="bichoInicio" hidden aria-hidden="true"></div>
   <h1 id="tituloInicio">La expedición<br>os espera</h1>
   <p id="textoInicio">Al pulsar, el mapa se abrirá cubierto de niebla. Se irá despejando según caminéis.</p>
   <button class="boton" id="btnEmpezar">Empezar expedición</button>
@@ -403,9 +477,13 @@ body.autor #niebla{display:none}
   <div class="medalla" id="logroMedalla">🏺</div>
   <span class="sello">Estación encontrada</span>
   <h1 id="logroNombre">—</h1>
+  <p class="cuenta-gorda" id="logroCuenta"></p>
   <p id="logroPista">—</p>
   <button class="boton" id="btnSeguir">Seguir</button>
 </div>
+
+<!-- Papelillos de la celebración. Fuera de la capa: se limpia solo al cerrarse. -->
+<div id="confeti" hidden aria-hidden="true"></div>
 
 <!-- Cierre de la expedición -->
 <div class="capa" id="capaFinal" hidden>
@@ -608,6 +686,39 @@ if (!esDemo && !esAutor){
   try{ usuario = localStorage.getItem(CLAVE_USUARIO) || null; }catch(_){}
 }
 
+/* Cada uno con su bicho y su color, los mismos del login: en la cabecera, en su
+   marcador del mapa y en el tanteo del admin. Al de 6, que no lee, el bicho le
+   dice que ésta es su expedición mejor que su nombre escrito. */
+const QUIENES = {
+  himilce: { emoji:"🦊", color:"#8a6fb0", nombre:"Himilce" },
+  orian:   { emoji:"🐢", color:"#4f9e78", nombre:"Orián"   },
+  admin:   { emoji:"🧭", color:"#c8952f", nombre:"Admin"   },
+};
+let colorJugador = null;   // lo usa el HUD para el aro del marcador
+
+function pintarQuienSoy(){
+  const el = document.getElementById("yo");
+  const q = QUIENES[usuario];
+  if (!q || usuario === "admin"){ el.hidden = true; colorJugador = null; return; }
+  el.textContent = q.emoji;
+  el.hidden = false;
+  colorJugador = q.color;
+  document.body.style.setProperty("--c-jugador", q.color);
+
+  // La carrera es de cada uno: la pantalla de arranque le habla a él, no a
+  // "vosotros" como en la yincana en grupo de la v1. Su bicho en grande arriba,
+  // que el de 6 no lee su nombre pero reconoce a su tortuga.
+  const bicho = document.getElementById("bichoInicio");
+  bicho.textContent = q.emoji;
+  bicho.style.filter = "drop-shadow(0 0 20px " + q.color + "88)";
+  bicho.hidden = false;
+  document.getElementById("tituloInicio").innerHTML =
+    "A por ellas,<br>" + q.nombre;
+  document.getElementById("textoInicio").textContent =
+    "El mapa se abrirá cubierto de niebla y se irá despejando según camines. "
+    + "Busca las etiquetas escondidas y tócalas con el móvil.";
+}
+
 let syncEnCurso = false, syncPendiente = false, syncTimer = null;
 function sincronizar(){
   if (!usuario || esDemo || esAutor) return;
@@ -745,6 +856,51 @@ function provisionarEtiqueta(k){
   };
 }
 
+/* Cómo va la carrera. Sólo lo ve el admin: en el móvil de cada crío no aparece
+   el rival, cada uno va a lo suyo. Y no canta ganador —eso lo dice quien vaya
+   con ellos—, sólo enseña el tanteo y a qué hora encontró cada uno la última. */
+function marcadorDeCarrera(hallazgos, total){
+  const caja = document.createElement("div");
+  caja.className = "carrera";
+  for (const u of ["himilce", "orian"]){
+    const q = QUIENES[u];
+    const suyos = hallazgos.filter(x => x.usuario === u)
+                           .sort((a,b) => (a.cuando||0) - (b.cuando||0));
+    const fila = document.createElement("div");
+    fila.className = "corredor";
+    fila.style.setProperty("--c", q.color);
+
+    const bicho = document.createElement("span");
+    bicho.className = "bicho"; bicho.textContent = q.emoji;
+
+    const barra = document.createElement("div"); barra.className = "barra-c";
+    const relleno = document.createElement("i");
+    relleno.style.width = total ? Math.round(100 * suyos.length / total) + "%" : "0%";
+    barra.appendChild(relleno);
+
+    const tanteo = document.createElement("span");
+    tanteo.className = "tanteo";
+    tanteo.textContent = suyos.length + "/" + total;
+
+    fila.append(bicho, barra, tanteo);
+    const pie = document.createElement("p");
+    pie.className = "ultima";
+    const ult = suyos[suyos.length - 1];
+    pie.textContent = ult
+      ? q.nombre + " · última a las " + horaCorta(ult.cuando)
+      : q.nombre + " · todavía ninguna";
+    caja.append(fila, pie);
+  }
+  return caja;
+}
+
+function horaCorta(epochSeg){
+  if (!epochSeg) return "—";
+  const d = new Date(epochSeg * 1000);
+  return String(d.getHours()).padStart(2,"0") + ":" +
+         String(d.getMinutes()).padStart(2,"0");
+}
+
 /* Panel de estaciones (reutiliza el contenedor #autor como panel inferior). */
 async function mostrarPanelAdmin(resaltar){
   const panel = document.getElementById("autor");
@@ -760,7 +916,8 @@ async function mostrarPanelAdmin(resaltar){
     if (re.ok) lista = (await re.json()).estaciones || [];
     if (rh.ok) hallazgos = (await rh.json()).hallazgos || [];
   }catch(_){}
-  const EMOJI = { himilce:"🦊", orian:"🐢", admin:"🧭" };
+  const EMOJI = { himilce:QUIENES.himilce.emoji, orian:QUIENES.orian.emoji,
+                  admin:QUIENES.admin.emoji };
   const encontraronPor = {};   // k -> [usuarios que la encontraron]
   for (const hh of hallazgos)
     (encontraronPor[hh.k] = encontraronPor[hh.k] || []).push(hh.usuario);
@@ -777,13 +934,10 @@ async function mostrarPanelAdmin(resaltar){
   const bCerrar = document.createElement("button");
   bCerrar.className = "boton hueco"; bCerrar.textContent = "Cerrar";
   fila.append(bNueva, bCerrar);
-  // resumen: colocadas y cuántas lleva encontradas cada crío
   const colocadas = lista.filter(e => e.lat != null).length;
-  const cuenta = u => hallazgos.filter(x => x.usuario === u).length;
   const resumen = document.createElement("p"); resumen.className = "aviso";
-  resumen.textContent = `Colocadas ${colocadas}/${lista.length}  ·  `
-    + `🦊 Himilce ${cuenta("himilce")}  ·  🐢 Orián ${cuenta("orian")}`;
-  panel.append(h, aviso, fila, resumen);
+  resumen.textContent = `Colocadas ${colocadas} de ${lista.length}`;
+  panel.append(h, aviso, fila, resumen, marcadorDeCarrera(hallazgos, colocadas || lista.length));
   bCerrar.onclick = () => { panel.hidden = true; document.body.classList.remove("autor"); };
 
   bNueva.onclick = async () => {
@@ -879,8 +1033,11 @@ let mem = null; // respaldo si localStorage está bloqueado (previsualizaciones,
    queda en blanco al primer repintado, y ahí ya no hay yincana que salvar:
    más vale perder una pisada rara que la partida entera. */
 function sanear(e){
-  const bueno = { rastro:[], abiertas:[], capturas:[] };
+  const bueno = { rastro:[], abiertas:[], capturas:[], comenzado:null };
   if (!e || typeof e !== "object") return bueno;
+  // Cuándo arrancó la carrera, para poder decirles al final lo que tardaron.
+  // Una fecha absurda (reloj del móvil movido, guardado a medias) se descarta.
+  if (Number.isFinite(e.comenzado) && e.comenzado > 0) bueno.comenzado = e.comenzado;
   if (Array.isArray(e.rastro))
     bueno.rastro = e.rastro.filter(p => Array.isArray(p) && p.length >= 2 &&
       Number.isFinite(p[0]) && Number.isFinite(p[1]));
@@ -898,7 +1055,7 @@ function leer(){
   try{
     const s = localStorage.getItem(CLAVE);
     return sanear(s ? JSON.parse(s) : null);
-  }catch(e){ return mem || { rastro:[], abiertas:[], capturas:[] }; }
+  }catch(e){ return mem || { rastro:[], abiertas:[], capturas:[], comenzado:null }; }
 }
 function guardar(e){
   mem = e;
@@ -906,13 +1063,13 @@ function guardar(e){
   programarSync();   // respaldo mejor-esfuerzo si hay token y red
 }
 
-let estado = esDemo ? { rastro:[], abiertas:[], capturas:[] } : leer();  // la demo siempre empieza limpia
+let estado = esDemo ? { rastro:[], abiertas:[], capturas:[], comenzado:null } : leer();  // la demo siempre empieza limpia
 if (params.has("reset")){
   // La niebla despejada es lo único que se llevan de recuerdo y ?reset es una
   // dirección corta que se queda en el historial: que no la borre un despiste.
   if (esDemo || confirm("¿Borrar la partida y empezar de cero?\n\n" +
                         "Se pierde todo el mapa que lleváis despejado.")){
-    estado = { rastro:[], abiertas:[], capturas:[] };
+    estado = { rastro:[], abiertas:[], capturas:[], comenzado:null };
     guardar(estado);
   }
   history.replaceState(null,"",location.pathname);
@@ -1347,10 +1504,15 @@ function fotograma(t){
     }
   }
 
-  // marcador del jugador
+  // Marcador del jugador: el relleno sigue siendo frío/caliente (es la guía del
+  // de 6, no se toca) y alrededor va el aro de su color, el mismo del login.
   gH.beginPath(); gH.arc(x, y, 7.5, 0, 7);
   gH.fillStyle = color; gH.fill();
   gH.strokeStyle = "#0d151d"; gH.lineWidth = 2.5; gH.stroke();
+  if (colorJugador){
+    gH.beginPath(); gH.arc(x, y, 10.5, 0, 7);
+    gH.strokeStyle = colorJugador; gH.lineWidth = 2.2; gH.stroke();
+  }
 }
 
 function mezcla(a, b, t){
@@ -1497,16 +1659,74 @@ function celebrar(est){
   // orden). El dónde está el tesoro se guarda para la pantalla final.
   document.getElementById("logroPista").textContent =
     quedan ? "Te quedan " + quedan + " por encontrar." : "¡Las tienes todas! Dale a Seguir.";
+  pintarCuentaGorda();
   document.getElementById("capaLogro").hidden = false;
+  soltarConfeti();
+  brincarAvatar();
 
   // En la demo nadie va a estar pulsando: se cierra sola y sigue el paseo.
   if (esDemo) setTimeout(seguirDespuesDelLogro, 3200);
 
   abrirAudio();
-  [0,110,230,400].forEach((t,i) => setTimeout(() => pitido([660,880,1100,1320][i], 190, .26), t));
+  fanfarria(!quedan);
   vibrar([70,60,70,60,300]);
   pintarMedallero();
   mostrarPista();
+}
+
+/* El marcador que entiende el de 6: un punto de oro por cada una encontrada y
+   uno hueco por cada una que falta. Sin leer nada. */
+function pintarCuentaGorda(){
+  const c = document.getElementById("logroCuenta");
+  c.innerHTML = "";
+  TODAS.forEach((e, i) => {
+    const p = document.createElement("i");
+    if (estado.abiertas.includes(e.k)){
+      p.className = "hecho";
+      p.style.animationDelay = (i * 70) + "ms";
+    }
+    c.appendChild(p);
+  });
+}
+
+/* Papelillos de colores cayendo. Nada de librerías: unos cuantos <i> con una
+   animación de CSS y a los dos segundos se limpian solos. */
+function soltarConfeti(){
+  const caja = document.getElementById("confeti");
+  if (quietud){ caja.hidden = true; return; }   // sin animaciones, sin confeti
+  caja.innerHTML = "";
+  caja.hidden = false;
+  const tonos = ["#c8952f", "#f2b134", "#3d7d8f", "#e8e0cf", "#8a6fb0", "#4f9e78"];
+  for (let i = 0; i < 34; i++){
+    const p = document.createElement("i");
+    p.style.left = (Math.random()*100) + "vw";
+    p.style.background = tonos[i % tonos.length];
+    p.style.animationDuration = (1.5 + Math.random()*1.3) + "s";
+    p.style.animationDelay = (Math.random()*0.45) + "s";
+    p.style.opacity = 0.75 + Math.random()*0.25;
+    caja.appendChild(p);
+  }
+  clearTimeout(soltarConfeti.t);
+  soltarConfeti.t = setTimeout(() => {
+    caja.hidden = true; caja.innerHTML = "";
+  }, 3200);
+}
+
+/* El bicho de la cabecera pega un salto: el medallero es pequeño y sus ojos
+   están en el instrumento de abajo, así que el aviso tiene que moverse. */
+function brincarAvatar(){
+  const el = document.getElementById("yo");
+  if (el.hidden) return;
+  el.classList.remove("salta");
+  void el.offsetWidth;            // reinicia la animación si encadenan dos
+  el.classList.add("salta");
+}
+
+/* Cuatro notas al encontrar una; al completar la yincana, la escala entera.
+   El de 6 se guía por el oído, así que la última tiene que sonar a final. */
+function fanfarria(ultima){
+  const notas = ultima ? [660,880,1100,1320,1580,1980] : [660,880,1100,1320];
+  notas.forEach((f, i) => setTimeout(() => pitido(f, 190, .26), i * 110));
 }
 
 /* Una sola zona: al cerrar la medalla no hay traslado ni cambio de mapa. O
@@ -1521,6 +1741,7 @@ function avisoSimple(titulo, texto){
   document.getElementById("logroMedalla").textContent = "🧭";
   document.getElementById("logroNombre").textContent = titulo;
   document.getElementById("logroPista").textContent = texto;
+  document.getElementById("logroCuenta").innerHTML = "";   // un aviso no es un hallazgo
   document.getElementById("capaLogro").hidden = false;
 }
 
@@ -1552,12 +1773,24 @@ function mostrarFinal(){
   const m = metrosCaminados();
   document.getElementById("finResumen").textContent =
     `${TODAS.length} estaciones · ` +
-    (m < 1000 ? `${Math.round(m)} m` : `${(m/1000).toFixed(1)} km`) + " caminados";
+    (m < 1000 ? `${Math.round(m)} m` : `${(m/1000).toFixed(1)} km`) + " caminados" +
+    tiempoDeCarrera();
 
   document.getElementById("capaFinal").hidden = false;
+  soltarConfeti();
   abrirAudio();
   [0,130,270,430,640].forEach((t,i) =>
     setTimeout(() => pitido([660,880,1100,1320,1560][i], 220, .24), t));
+}
+
+/* Lo que tardaron, para poder comparar las dos carreras al acabar. Se calla si
+   no hay cronómetro (partida vieja) o si sale un disparate por el reloj. */
+function tiempoDeCarrera(){
+  if (!estado.comenzado) return "";
+  const min = Math.round((Date.now() - estado.comenzado) / 60000);
+  if (min < 1 || min > 60*24) return "";
+  return min < 60 ? ` · ${min} min`
+                  : ` · ${Math.floor(min/60)} h ${String(min%60).padStart(2,"0")} min`;
 }
 
 /* En una sola zona no hay varios mapas que repasar: al terminar, la niebla se
@@ -1863,7 +2096,7 @@ function montarDemo(){
     e.target.textContent = "x" + demoVelocidad;
   };
   document.getElementById("demoOtra").onclick = () => {
-    estado = { rastro:[], abiertas:[], capturas:[] }; guardar(estado);
+    estado = { rastro:[], abiertas:[], capturas:[], comenzado:null }; guardar(estado);
     demoTramo = 0; demoT = 0; demoPausa = 0; pos = null;
     yaAvisado = false; dentroSeguidas = 0;
     document.getElementById("capaLogro").hidden = true;
@@ -1890,6 +2123,9 @@ let siguiendo = false;
 function arrancarSeguimiento(){
   if (siguiendo) return;
   siguiendo = true;
+  // El cronómetro arranca en la primera salida y no se reinicia con las recargas
+  // por etiqueta: es el tiempo de la carrera, no el de esta carga de la página.
+  if (!estado.comenzado){ estado.comenzado = Date.now(); guardar(estado); }
   document.getElementById("capaInicio").hidden = true;
   dimensionar();
   mantenerPantalla();
@@ -1948,6 +2184,7 @@ function montarJuego(){
     bS.hidden = false;
     bS.onclick = () => { if (confirm("¿Cerrar sesión?")) cerrarSesion(); };
   }
+  pintarQuienSoy();
   // El admin tiene el panel de estaciones y coloca etiquetas: escanear una
   // (?k=) captura su GPS en vez de desbloquearla.
   if (usuario === "admin"){

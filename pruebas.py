@@ -353,6 +353,22 @@ def main():
                   "la niebla despejada sobrevive a la recarga",
                   f"{rastro} -> {rastro2}")
 
+        # La fiesta del hallazgo: para el de 6, que no lee, es medio juego.
+        puntos = pg.eval_on_selector_all("#logroCuenta i", "e => e.length")
+        hechos = pg.eval_on_selector_all("#logroCuenta i.hecho", "e => e.length")
+        comprobar(puntos == len(todas) and hechos == 1,
+                  "la medalla enseña cuántas llevas en puntos, sin leer",
+                  f"{hechos} de oro sobre {puntos}")
+        papelillos = pg.eval_on_selector_all("#confeti i", "e => e.length")
+        comprobar(papelillos > 0, "y cae confeti al encontrarla",
+                  f"{papelillos} papelillos")
+        # El cronómetro de la carrera no puede reiniciarse en cada etiqueta: la
+        # recarga por NFC es constante y dejaría el tiempo final en cero.
+        com1 = pg.evaluate(
+            "JSON.parse(localStorage.getItem('yincana.v1')).comenzado")
+        comprobar(isinstance(com1, (int, float)) and com1 > 0,
+                  "el cronómetro de la carrera arranca y se guarda", str(com1))
+
         pg.click("#btnSeguir")
         pg.wait_for_timeout(600)
         comprobar(pg.is_hidden("#capaLogro"), "el botón Seguir cierra la medalla")
@@ -363,6 +379,20 @@ def main():
                       in pg.inner_text("#pistaTitulo").upper(),
                       "la pista pasa a contar cuántas quedan, no a numerar el orden",
                       pg.inner_text("#pistaTitulo"))
+
+        # Su bicho en la cabecera: al de 6 le dice que ésta es SU partida mejor
+        # que su nombre escrito. El contexto va sembrado como himilce.
+        comprobar(pg.is_visible("#yo") and "🦊" in pg.inner_text("#yo"),
+                  "el jugador lleva su bicho en la cabecera",
+                  pg.inner_text("#yo"))
+        comprobar(pg.evaluate("colorJugador") == "#8a6fb0",
+                  "y su color va al marcador del mapa",
+                  str(pg.evaluate("colorJugador")))
+        com2 = pg.evaluate(
+            "JSON.parse(localStorage.getItem('yincana.v1')).comenzado")
+        comprobar(com2 == com1,
+                  "y el cronómetro no se reinicia en la recarga por etiqueta",
+                  f"{com1} -> {com2}")
 
         # ── 5 · casos raros que van a pasar seguro ──────────────────────
         print("\nCasos raros")
@@ -780,7 +810,24 @@ def main():
             comprobar(len(colocada) == 1,
                       "guardar coloca la etiqueta con su GPS en el servidor",
                       str([e["k"] for e in est]))
+
+            # El marcador de la carrera: el único sitio donde se ven los dos.
+            # Quien va con ellos necesita saber cómo va la cosa para cantarlo.
+            pg5.evaluate("mostrarPanelAdmin()"); pg5.wait_for_timeout(1200)
+            corredores = pg5.eval_on_selector_all(".carrera .corredor", "e => e.length")
+            comprobar(corredores == 2,
+                      "el panel del admin trae el marcador con los dos críos",
+                      f"{corredores} corredores")
+            texto_carrera = pg5.inner_text(".carrera")
+            comprobar("Himilce" in texto_carrera and "Orián" in texto_carrera,
+                      "con su nombre y cuándo encontró cada uno la última",
+                      texto_carrera.replace("\n", " · ")[:80])
             ctx5.close()
+
+            # Y en el móvil del crío no se filtra el rival: cada uno a lo suyo.
+            comprobar("orián" not in pg.inner_text("body").lower()
+                      and "orian" not in pg.inner_text("body").lower(),
+                      "en el móvil del jugador no aparece el rival por ningún lado")
 
             comprobar(not err3 and not err4 and not err5,
                       "el cliente con servidor no suelta errores de JavaScript",
