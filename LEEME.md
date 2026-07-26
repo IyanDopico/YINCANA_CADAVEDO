@@ -1,11 +1,19 @@
 # Yincana con niebla de guerra
 
-Página web que se abre con el mapa del pueblo cubierto de niebla. La niebla se
-despeja según caminan. Al acercarse a una estación empieza a pitar cada vez más
-rápido, y al tocar la etiqueta NFC escondida se desbloquea la medalla y la
-siguiente pista.
+Página web que se abre con el **mapa real del pueblo** cubierto de niebla. La
+niebla se despeja según caminan. Al acercarse a una estación empieza a pitar cada
+vez más rápido, y al tocar la etiqueta NFC escondida se desbloquea la medalla y
+la siguiente pista.
 
 No hace falta instalar nada en los móviles de tus primos.
+
+> **v2 (versión útil).** En el pueblo hay cobertura, así que el mapa es **vivo**
+> (calles reales, teselas servidas por tu máquina) con la niebla encima. Hay
+> **login** (admin con PIN + Himilce/Orián con su botón) y las **etiquetas se
+> colocan en campo**: el admin escanea cada una y guarda su GPS. El día a día
+> está en `DEMO.md` (probar) y `DESPLIEGUE.md` (montar). Algunas secciones de
+> abajo describen el flujo de la v1 (imagen pre-generada, `?modo=autor`) y ya no
+> aplican; se conservan como referencia. La fuente de verdad es `CLAUDE.md`.
 
 ## Archivos
 
@@ -43,7 +51,7 @@ pip install playwright && playwright install chromium
 python pruebas.py
 ```
 
-Simula el recorrido completo y valida 98 comportamientos (incluidos los del
+Simula el recorrido completo y valida 81 comportamientos (incluidos los del
 servidor). Con `--capturas` deja además los pantallazos en `capturas/`. El
 backend tiene su propia batería, sin navegador ni red:
 
@@ -180,57 +188,51 @@ Otras direcciones útiles:
   dirección corta, se queda en el historial, y lo que borra es el mapa que
   llevan despejado.
 
-## Servidor (opcional)
+## Servidor
 
-La yincana funciona sola, sin backend: es su punto de partida y no cambia. Pero
-esta máquina puede hacer de servidor y añadir dos cosas, **sin que ninguna sea
-imprescindible para jugar**:
-
-- **Cuentas y respaldo del progreso.** Cada jugador tiene un token; su avance se
-  guarda en el servidor y se puede retomar en otro móvil si el suyo muere.
-- **Contenido dinámico.** Las pistas, los puntos y los spawns se sirven desde
-  aquí. Cambiar una pista o añadir un punto **no obliga a regrabar las
-  etiquetas**: siguen apuntando a la misma URL con su `?k=`.
-
-La regla de oro se mantiene: el móvil guarda todo en local y trae del servidor
-lo que haya **cuando hay cobertura**. Sin señal tira de su copia y del `CONFIG`
-integrado. El servidor *actualiza*, no es de lo que se *depende*.
+Esta máquina hace de servidor: sirve el juego, las teselas del mapa, el login y
+el progreso. El móvil guarda todo en local y trae del servidor lo que haya; un
+bache de red no tira la página (service worker), pero para el **primer login**
+hace falta cobertura (se hace en casa).
 
 ### Arrancarlo
 
 ```bash
-python servidor.py                 # juego + API en http://localhost:8000
+YINCANA_PIN=1234 python servidor.py    # juego + API en http://localhost:8000
 ```
 
-Con eso solo ya tienes el juego entero servido en un origen (útil para probar).
-En producción va **Caddy** delante para el HTTPS (la geolocalización lo exige):
-edita el dominio en `Caddyfile`, `caddy run --config Caddyfile`, y deja el API
-levantado como servicio con `yincana.service` (instrucciones dentro de cada
-archivo).
+En producción va tras **Cloudflare Tunnel** en `yincana.iyando.qzz.io`, como
+servicios `yincana` + `yincana-tunnel`. Todo el montaje está en `DESPLIEGUE.md`.
 
-### Publicar contenido
+### Usuarios y login
 
-Edita `contenido.json` —tiene la misma forma que el `CONFIG`, más un `spawns`
-por capítulo— y súbelo:
+Tres usuarios fijos, no se crean: **admin** (tú, con el PIN de `YINCANA_PIN`),
+**Himilce** y **Orián** (entran con su botón, sin contraseña; Orián no lee, así
+que cada uno por su emoji y color). La sesión queda en una cookie persistente.
 
 ```bash
-python servidor.py publicar contenido.json
+python servidor.py jugadores           # avance de cada uno
 ```
 
-Los móviles lo recogen la próxima vez que abran la página con cobertura y lo
-aplican en la siguiente carga (no se reordena el mapa bajo los pies de quien
-está jugando). Un `spawn` es un punto extra que aparece en el mapa y se captura
-al pasar cerca, sin etiqueta: `{ "k", "nombre", "lat", "lon", "medalla", "aviso" }`.
+### Colocar las etiquetas (día del montaje)
 
-### Crear jugadores
+El mapa arranca en blanco: las etiquetas se colocan en campo.
 
-```bash
-python servidor.py cuenta "Martina"     # imprime su URL con ?u=<token>
-python servidor.py jugadores            # lista quién va por dónde
-```
+1. Entra como **admin** y pulsa **⚙** → **Nueva etiqueta**. Te da la URL a grabar
+   (`…/?k=<clave>`); grábala en un NTAG215 con **NFC Tools** (registro URL).
+2. En el sitio: pega el tag, **escanéalo**. Con sesión de admin se abre "Colocar
+   etiqueta"; espera a ±<15 m y **Guardar aquí**: queda su GPS en el servidor.
+3. En casa, desde **⚙**, ponle nombre, pista y medalla.
 
-Cada crío abre **su** URL una vez; el token se le queda guardado y sobrevive a
-las recargas por etiqueta. Sin `?u=` se juega igual, solo que sin respaldo.
+`python servidor.py estaciones` lista lo colocado y lo pendiente.
+
+### Contenido y spawns
+
+Los metadatos base (nombre del pueblo, radios, spawns, texto final) van en
+`contenido.json`; se suben con `python servidor.py publicar contenido.json`. Un
+`spawn` es un punto extra que aparece en el mapa y se captura al pasar cerca, sin
+etiqueta: `{ "k", "nombre", "lat", "lon", "medalla", "aviso" }`. Cambiar
+cualquier cosa **no obliga a regrabar los tags**: la URL `?k=` no cambia.
 
 ### Cómo llegan los móviles al servidor en el pueblo
 

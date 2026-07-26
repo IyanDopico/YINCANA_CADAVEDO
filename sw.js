@@ -1,11 +1,11 @@
 /* Service worker de la yincana.
-   Objetivo: que la página siga funcionando sin cobertura. El GPS no la
-   necesita (GNSS sólo recibe), pero la web sí, así que la cacheamos entera.
+   Red de seguridad: en la v2 hay cobertura, pero un bache momentáneo no puede
+   tirar la página. Cachea la app y las teselas ya vistas.
 
-   Sube el número de VERSION cada vez que edites index.html o el mapa,
+   Sube el número de VERSION cada vez que edites index.html, sw.js o el vendor,
    o los móviles seguirán sirviendo la copia vieja. */
 
-const VERSION = "yincana-v8";
+const VERSION = "yincana-v9";
 
 const ARCHIVOS = [
   "./",
@@ -41,18 +41,35 @@ self.addEventListener("activate", e => {
   );
 });
 
+function guardarEnCache(req, resp){
+  const copia = resp.clone();
+  caches.open(VERSION).then(c => c.put(req, copia)).catch(() => {});
+}
+
 self.addEventListener("fetch", e => {
   if (e.request.method !== "GET") return;
+  const ruta = new URL(e.request.url).pathname;
 
-  // Red primero, caché de respaldo. Así ves tus cambios al editar en casa
-  // con cobertura, pero en el pueblo sin señal sigue tirando de la copia.
+  // /api: dinámico (sesión, contenido, progreso). Red directa, sin cachear: el
+  // cliente ya guarda su estado y su contenido en localStorage para el offline.
+  if (ruta.startsWith("/api/")) return;
+
+  // Teselas: inmutables. Caché primero (rápido y sobrevive a cortes); si no está,
+  // se baja y se guarda.
+  if (ruta.startsWith("/tiles/")){
+    e.respondWith(
+      caches.match(e.request).then(c => c || fetch(e.request).then(r => {
+        guardarEnCache(e.request, r); return r;
+      }).catch(() => c))
+    );
+    return;
+  }
+
+  // Resto (app, vendor, imágenes): red primero, caché de respaldo. Así ves tus
+  // cambios al editar con cobertura, y sin señal sigue tirando de la copia.
   e.respondWith(
     fetch(e.request)
-      .then(r => {
-        const copia = r.clone();
-        caches.open(VERSION).then(c => c.put(e.request, copia)).catch(() => {});
-        return r;
-      })
+      .then(r => { guardarEnCache(e.request, r); return r; })
       .catch(() =>
         caches.match(e.request, { ignoreSearch: true })
           .then(r => r || caches.match("./index.html"))

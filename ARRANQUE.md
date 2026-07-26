@@ -3,12 +3,17 @@
 Pega esto como primer mensaje. `CLAUDE.md` se carga solo, así que no hace falta
 repetir lo que ya está ahí.
 
+> **Nota v2.** Este documento es el handoff de la v1 (imagen de mapa por
+> capítulos, `?modo=autor`, tareas 5/7). La v2 —mapa vivo, login, provisión de
+> etiquetas en campo— está descrita en `CLAUDE.md`, `PLAN-v2.md`, `DEMO.md` y
+> `DESPLIEGUE.md`. Lo de abajo se conserva como referencia histórica.
+
 ---
 
 ## Mensaje para pegar
 
 > Yincana con niebla de guerra para mis primos de 6 y 10 años, en Cadavedo
-> (Valdés, Asturias), en agosto. El código base ya está y las 98 pruebas pasan:
+> (Valdés, Asturias), en agosto. El código base ya está y las 81 pruebas pasan:
 > ejecuta `python pruebas.py` antes de nada para confirmarlo. Abre también
 > `?demo` en el navegador para ver de qué va sin necesidad de GPS. Hay un
 > servidor opcional (`servidor.py`) con cuentas, respaldo de progreso y

@@ -55,6 +55,27 @@ arranca el túnel y depende del primero. Tras un reinicio del host, ambos suben 
 > fuera (`cf-cache-status: BYPASS`, comprobado). No hace falta una Cache Rule
 > para esto. Las respuestas de `/api` ya van con `no-store` y salen `DYNAMIC`.
 
+## PIN de admin y puesta al día del código
+
+- **PIN de admin**: va en `yincana.service` (`Environment=YINCANA_PIN=…`).
+  Cámbialo por el tuyo y reinicia el servicio. Sin PIN, el admin no puede entrar;
+  los críos entran sin PIN.
+- **Al actualizar el código** (git pull o editar en la máquina), recarga el
+  servicio para que corra la versión nueva y sube `VERSION` en `sw.js`:
+  ```
+  sudo systemctl restart yincana
+  ```
+  La base de datos gana sola las tablas nuevas (`sesiones`, `estaciones`) al
+  arrancar; no hay que borrarla.
+
+## Calentar la caché de teselas (día del montaje)
+
+Las teselas se descargan de OSM la primera vez que se ven y quedan cacheadas en
+`cache_teselas/`. La política de OSM prohíbe descargas masivas, así que **no se
+pre-descargan por código**: el día que vayas a colocar las etiquetas, pasea la
+vista del mapa por la zona de juego (en el móvil o en el navegador) para que se
+calienten. A partir de ahí funciona sin depender de OSM, aun sin cobertura.
+
 ## Pendiente de limpiar
 
 Al enrutar el DNS se creó por error un registro con el dominio mal escrito

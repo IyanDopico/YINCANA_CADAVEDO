@@ -22,17 +22,15 @@ explicarle qué es Web Mercator ni qué es el RSSI.
 ## Órdenes
 
 ```bash
-python pruebas.py               # 98 comprobaciones con GPS simulado (incluye servidor)
+python pruebas.py               # 81 comprobaciones con GPS simulado (incluye servidor)
 python pruebas.py --capturas    # además deja pantallazos en capturas/
 python pruebas.py --ver         # con navegador visible, para depurar
 python pruebas_servidor.py      # pruebas del backend, sin navegador ni red
-python mapa.py --capitulos      # genera los mapas del CONFIG y sus esquinas
-python mapa.py <sur> <oeste> <norte> <este> --salida <archivo>   # uno suelto
-python -m http.server 8000      # servidor estático local (solo cliente)
-python servidor.py              # cliente + API (cuentas, progreso, contenido)
-python servidor.py publicar contenido.json   # sube una versión de contenido
-python servidor.py cuenta "Nombre"           # crea un jugador y su URL ?u=
-python servidor.py jugadores                 # lista jugadores y su avance
+python servidor.py              # juego + API (sesiones, progreso, contenido, teselas)
+python servidor.py publicar contenido.json   # sube metadatos (pueblo, radios, spawns)
+python servidor.py jugadores                 # usuarios y su avance
+python servidor.py estaciones                # estaciones y si están colocadas
+YINCANA_PIN=1234 python servidor.py          # con PIN de admin (en prod va en el systemd)
 ```
 
 **`python`, no `python3`.** En la máquina de Iyán (Windows) `python3` es el
@@ -40,8 +38,9 @@ alias de la Microsoft Store, un 3.14 vacío; `python` es el 3.11 que tiene
 Pillow y Playwright. `python3 mapa.py` falla con `No module named 'PIL'` y no
 es que falte Pillow, es que es otro intérprete.
 
-Direcciones: `?demo` recorrido simulado · `?modo=autor` capturar coordenadas ·
-`?reset` borrar la partida.
+Direcciones: `?demo` recorrido simulado (sin login) · `?reset` borrar la partida
+· `?k=<clave>` la abre una etiqueta (jugador: desbloquea; admin: coloca). El
+panel de estaciones es el botón ⚙ (sólo admin).
 
 `pruebas.py` necesita `pip install playwright && playwright install chromium`.
 
@@ -53,61 +52,45 @@ funciona en local sin certificado. En producción hace falta HTTPS de verdad.
 
 ## Cómo está montado
 
-Un solo `index.html` sin dependencias ni CDN. Tipografías del sistema. Todo lo
-configurable está en el bloque `CONFIG` de arriba del todo.
+`index.html` es la aplicación (sin build ni gestor de paquetes). Única
+dependencia: **Leaflet vendorizado en `vendor/leaflet/`** (servido desde la
+propia máquina, no de un CDN). El `CONFIG` de arriba es la **copia integrada de
+respaldo**; el contenido de verdad lo sirve el servidor.
 
-- `index.html` — la aplicación entera
-- `sw.js` — service worker, para que funcione sin cobertura
+- `index.html` — la aplicación entera (mapa vivo + niebla + login + provisión)
+- `vendor/leaflet/` — Leaflet 1.9.4 (js+css+imágenes), sin CDN
+- `sw.js` — service worker (red de seguridad; cachea app y teselas)
 - `manifest.json` — para añadir a pantalla de inicio
-- `mapa.py` — descarga teselas de OSM, las cose, y calcula las esquinas
-- `pruebas.py` — simulador de recorrido
-- `servidor.py` — backend opcional (stdlib + SQLite): cuentas, progreso, contenido
-- `contenido.json` — contenido publicable en el servidor, con la forma del `CONFIG`
-- `Caddyfile`, `yincana.service` — despliegue del servidor (HTTPS + systemd)
-- `pruebas_servidor.py` — pruebas del backend
-- `LEEME.md` — guía de montaje para Iyán
-- `DEMO.md` — cómo probar con servidor y un tag NFC
-- `DESPLIEGUE.md` — despliegue en `iyando.qzzz.io` con Cloudflare Tunnel
-- `mapa-pueblo.jpg`, `mapa-regalina.jpg` — uno por capítulo, generados con
-  `mapa.py --capitulos`. Las esquinas del `CONFIG` son las reales del recorte,
-  no las que se pidieron: si regeneras un mapa, hay que volver a pegarlas.
+- `servidor.py` — backend (stdlib + SQLite): sesiones, progreso, contenido,
+  estaciones y **proxy-caché de teselas** (`/tiles/{z}/{x}/{y}.png`)
+- `contenido.json` — metadatos publicables (pueblo, radios, spawns, final)
+- `Caddyfile`, `yincana.service`, `yincana-tunnel.service` — despliegue
+- `pruebas.py` — simulador de recorrido · `pruebas_servidor.py` — backend
+- `LEEME.md`, `DEMO.md`, `DESPLIEGUE.md`, `PLAN-v2.md` — guías
+- `mapa.py`, `mapa-*.jpg` — **obsoletos** en v2 (el mapa es vivo); se conservan
+  por si algún día se quiere un modo sin conexión con imagen pre-generada.
 
-## Geografía de Cadavedo
+## Una sola zona, mapa vivo
 
-Distancias reales entre los tres puntos con coordenadas públicas verificadas:
+En v2 hay cobertura, así que el mapa es **vivo** (teselas reales de OSM
+proxeadas por la máquina) con la niebla de guerra por encima. **Una sola zona**:
+el área de juego (`boundsDeJuego()`) se ajusta sola al rectángulo que engloba
+las estaciones colocadas, con margen. Fuera quedan los capítulos, el traslado y
+el conmutador de mapas de la v1.
 
-| | |
-|---|---|
-| Apeadero → núcleo | 875 m |
-| Núcleo → La Regalina | 1 196 m |
-| Apeadero → La Regalina | 1 985 m |
+Las coordenadas de las estaciones **se capturan en campo**: el admin escanea
+cada etiqueta y se guarda su GPS (tabla `estaciones` del servidor). El `CONFIG`
+integrado sólo trae unas de ejemplo para la demo.
 
-**Resuelto partiéndolo en capítulos**, un mapa por zona. En un solo recuadro
-(1934 × 1557 m) cada pisada despejaba el 0,13 %: caminaban mucho y no veían
-abrirse casi nada. Ahora son dos:
-
-| | | |
-|---|---|---|
-| `pueblo` | 923 × 597 m | 0,70 % por pisada |
-| `regalina` | 400 × 404 m | 2,38 % por pisada |
-
-El capítulo activo **se deduce de `estado.abiertas`**, no se guarda: la primera
-estación sin abrir manda. Eso lo hace idempotente frente a las recargas por
-etiqueta, que es la razón de montarlo así y no con un `CONFIG` por capítulo.
-Las etiquetas apuntan todas a la misma URL.
-
-Las coordenadas de las estaciones salen de OpenStreetMap y de fuentes
-públicas. Valen para la demo. **No valen para jugar**: apuntan al sitio
-aproximado, no a donde vaya a estar la etiqueta. Se sustituyen por capturas de
-campo con `?modo=autor`.
-
-Tres lienzos apilados sobre la imagen del mapa:
+Capas del render (todas dentro de `#lienzos`, que crea su propio contexto de
+apilado para no tapar las pantallas completas):
 
 | | |
 |---|---|
-| `#mapa` | la imagen, con `object-fit: contain` |
-| `#niebla` | capa opaca a la que se le abren agujeros con `destination-out` |
-| `#hud` | marcador, anillos de sónar y rastro; se repinta en cada fotograma |
+| `#mapa` | mapa Leaflet con `tileLayer('tiles/{z}/{x}/{y}.png')` |
+| capa niebla | `NieblaOverlay` (subclase de `L.ImageOverlay`): un canvas anclado al mapa a un zoom de referencia; se pica un agujero por pisada y no se repinta al mover/zoom |
+| rastro / precisión / spawns | capas de Leaflet (`L.polyline` / `L.circle` / `L.marker`) |
+| `#hud` | sólo lo animado: marcador del jugador y anillos de sónar, por fotograma |
 
 ## Decisiones que no se tocan
 
@@ -133,39 +116,58 @@ worker se mantiene como red de seguridad (que un bache momentáneo no tire la
 página), no como requisito. `pruebas.py` sigue cortando la red para comprobar
 que un corte puntual no rompe nada.
 
-**El servidor es opcional y mejor-esfuerzo.** `servidor.py` (stdlib + SQLite)
-añade cuentas, respaldo de progreso y contenido dinámico, pero la yincana
-funciona igual sin él. El cliente resuelve el contenido **síncrono** al arrancar
-(caché local → `CONFIG` integrado) y refresca la caché en segundo plano para la
-**siguiente** carga: nunca reordena el mapa bajo los pies de quien juega. El
-progreso se sube con debounce y el `merge` del servidor no es destructivo (une
-`abiertas`/`capturas`, conserva el rastro más largo). Identidad opcional por
-`?u=<token>`, que se persiste en `localStorage` para sobrevivir a la recarga por
-etiqueta. `?modo=autor` y `?demo` ignoran el servidor a propósito: el autor
-captura las coordenadas del `CONFIG` integrado y la demo tiene que ser
-determinista. El estado ganó un campo `capturas` (spawns recogidos); pasa por
-`sanear()` como el resto.
+**Login persistente por cookie de sesión.** Tres usuarios fijos: `admin` (con
+PIN de `YINCANA_PIN`), `himilce`, `orian` (botón directo, sin contraseña; Orián
+no lee). El servidor deja una cookie `__Host-sesion` (HttpOnly, Secure,
+SameSite=Lax, 180 días). El cliente cachea el nombre de usuario en
+`localStorage` (`yincana.usuario`) para arrancar sin esperar a la red y sin
+cobertura; `confirmarSesion()` lo valida en segundo plano. Hay que loguearse una
+vez con red (en casa); a partir de ahí sobrevive a las recargas por etiqueta.
+
+**El progreso va por usuario en el servidor, mejor-esfuerzo.** Se sube con
+debounce y el `merge` no es destructivo (une `abiertas`/`capturas`, conserva el
+rastro más largo). El cliente guarda todo en `localStorage` **siempre**; el
+servidor es respaldo y permite retomar en otro móvil con el mismo login. El
+contenido se resuelve **síncrono** al arrancar (caché local → `CONFIG`
+integrado) y se refresca en segundo plano para la **siguiente** carga; sólo se
+aplica si trae ≥1 estación, para no dejar una partida vacía antes de provisionar.
+El estado ganó un campo `capturas` (spawns recogidos); pasa por `sanear()`.
+
+**Las escrituras van con guardián CSRF.** `_origen_ok()` exige `Sec-Fetch-Site`
+same-origin/none (o `Origin` == `YINCANA_ORIGEN`). Nada de CORS abierto: la
+cookie de credenciales es incompatible con `Access-Control-Allow-Origin: *`.
 
 **El público son un niño de 6 y otro de 10.** El de 6 se guía por el frío/
 caliente y el sonido, no lee. Nada esencial puede depender de leer texto: por eso
 el aviso de estar encima no es sólo el cambio de `#pistaTitulo`, sino la clase
 `body.encima`, que enciende el borde del instrumento y hace latir el número.
 
-**Cada móvil lleva su partida, y se pone al día solo.** No hay sincronización
-—sin backend haría falta QR, y `BarcodeDetector` no existe en Safari— así que
-los dos tienen que tocar cada etiqueta. Lo que sí se arregla es el despiste: al
-tocar una etiqueta posterior se dan por buenas las saltadas, pero sólo si el
-rastro de ese móvil pasó a menos de `radioZona * 2` de ellas. El rastro es lo
-único que distingue "se me olvidó tocar" de "he encontrado una etiqueta de más
-adelante", y esa distinción es la razón de que no valga contar huecos.
+**Cada uno toca cada etiqueta; el despiste se perdona por el rastro.** Al tocar
+una etiqueta posterior se dan por buenas las saltadas, pero sólo si el rastro de
+ese móvil pasó a menos de `radioZona * 2` de ellas (`perdonarSiPasaronCerca`).
+El rastro es lo único que distingue "se me olvidó tocar" de "he encontrado una
+de más adelante", y por eso no vale contar huecos. Con login, además, el
+progreso se retoma por usuario si cambian de móvil.
+
+**El admin coloca las etiquetas escaneándolas.** Escanear `?k=` con sesión de
+admin no desbloquea: abre "Colocar etiqueta" y guarda el GPS actual como
+ubicación de esa estación (`/api/estacion/colocar`, alta si es nueva). El panel
+(botón ⚙) las nombra, ordena y da la URL a grabar. Los jugadores (no admin) al
+escanear `?k=` desbloquean, como siempre.
 
 ## Trampas que ya nos mordieron
 
-**Proyección y `object-fit: contain`.** La imagen se centra con barras dentro
-del contenedor, pero los lienzos ocupan el contenedor entero. `aPixel()`
-proyecta sobre `recto` (el rectángulo real de la imagen), no sobre `W`/`H`. Si
-tocas la proyección, la comprobación de alineación de `pruebas.py` es la que lo
-pilla: lee el alfa del lienzo de niebla justo donde está el jugador.
+**La niebla se ancla al mapa, no a la pantalla.** `NieblaOverlay` extiende
+`L.ImageOverlay` para heredar el posicionado y la animación de zoom: el canvas
+tiene resolución fija a `ZREF` y Leaflet lo escala. Se pica un agujero por
+pisada (`revelar`), nunca se repinta al mover/zoom. `montarMapa()` fija la vista
+**antes** de añadir la capa (Leaflet difiere `addLayer` hasta que el mapa está
+listo, y `reconstruir` necesita el canvas ya creado). La comprobación de
+alineación de `pruebas.py` lee el alfa de ese canvas en el píxel del jugador.
+
+**`#lienzos` crea su propio contexto de apilado (`z-index:0`).** Si no, los
+paneles de Leaflet (z-index hasta 700) se cuelan por encima de las capas a
+pantalla completa (login, medalla, cierre) y las tapan.
 
 **`tintar()` espera `rgb()`, no hexadecimal.** Con un hex, su expresión regular
 extrae dígitos sueltos y devuelve un color casi negro. `mezcla()` siempre
@@ -184,22 +186,17 @@ haría lento el repintado de la niebla.
 
 **Lo que sale de `localStorage` pasa por `sanear()`.** Con `rastro` a null la
 página se queda en blanco al primer repintado, y en mitad del monte eso es el
-final de la yincana. También descarta las claves que ya no están en el `CONFIG`:
-pasa en cuanto recapturas coordenadas y salen claves nuevas, y sin eso el móvil
-se cree la yincana terminada y arranca en el último capítulo.
+final de la yincana. También descarta las `abiertas`/`capturas` cuyas claves ya
+no están en el contenido: pasa en cuanto recolocas estaciones y salen claves
+nuevas, y sin eso el móvil se cree la yincana terminada.
 
-**El rastro es uno solo para toda la yincana, y los mapas son varios.** Se
-guarda entero, pero al pintar hay que filtrarlo con `dentroDelMapa()`: sin eso,
-las pisadas del pueblo abren agujeros en el mapa de La Regalina, que está a
-1,2 km. Hay una comprobación que cuenta píxeles despejados justo después de
-cambiar de capítulo y exige cero.
+**El contenido servido sólo se aplica si trae estaciones.** Antes de provisionar,
+`/api/contenido` devuelve 0 estaciones; aplicarlo dejaría la partida sin nada que
+buscar. `contenidoConEstaciones()` es la puerta: si no hay, se sigue con el
+`CONFIG` integrado.
 
-**El mapa no cambia detrás de la medalla.** Al abrir la última estación de un
-capítulo, primero sale la pantalla de traslado y sólo al pulsar se cambia. Si no,
-cierran la medalla y aparece un mapa desconocido sin explicación.
-
-**Sube `VERSION` en `sw.js` al editar `index.html`.** Si no, los móviles siguen
-sirviendo la copia vieja y te vuelves loco.
+**Sube `VERSION` en `sw.js` al editar `index.html`, `sw.js` o el vendor.** Si no,
+los móviles siguen sirviendo la copia vieja y te vuelves loco.
 
 **Detrás de Cloudflare, el `sw.js` no se puede cachear en el edge.** Es la misma
 trampa un nivel más arriba: aunque subas `VERSION`, si Cloudflare tiene cacheado
