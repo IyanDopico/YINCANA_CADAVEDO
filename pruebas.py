@@ -204,8 +204,8 @@ def main():
         pg.wait_for_timeout(2000)
         repintes = pg.evaluate("window.__n")
         comprobar(repintes <= 5,
-                  "lejos de la estación el HUD no repinta en cada fotograma",
-                  f"{repintes} repintes en 2 s")
+                  f"repintados del HUD estando quietos y lejos: {repintes} en 2 s",
+                  "a 60 fps saldrían ~120: el filtro de repintado no está actuando")
 
         # ── 3 · caminar hacia la primera estación ───────────────────────
         print("\nRecorrido")
@@ -254,6 +254,27 @@ def main():
         comprobar(0 <= alfa["x"] <= alfa["W"] and 0 <= alfa["y"] <= alfa["H"],
                   "el marcador cae dentro del lienzo",
                   f"({alfa['x']:.0f}, {alfa['y']:.0f}) en {alfa['W']}x{alfa['H']}")
+
+        # Tres días caminando son un par de miles de pisadas guardadas, y la
+        # niebla se repinta entera cada vez que gira el móvil. Si eso tarda, se
+        # nota en la mano justo cuando le dan la vuelta para enseñar el mapa.
+        ms = pg.evaluate("""(caja) => {
+            const guardado = estado.rastro;
+            const r = [];
+            for (let i = 0; i < 2000; i++)
+                r.push([caja.sur   + Math.random()*(caja.norte - caja.sur),
+                        caja.oeste + Math.random()*(caja.este  - caja.oeste)]);
+            estado.rastro = r;
+            const t0 = performance.now();
+            pintarNiebla();
+            const t = performance.now() - t0;
+            estado.rastro = guardado;
+            pintarNiebla();
+            return t;
+        }""", caps[0]["esquinas"])
+        comprobar(ms < 400,
+                  f"repintar la niebla con 2000 pisadas: {ms:.0f} ms",
+                  "por encima de 400 ms se nota el tirón al girar el móvil")
 
         # ── 4 · desbloqueo por etiqueta ─────────────────────────────────
         print("\nEtiquetas NFC")

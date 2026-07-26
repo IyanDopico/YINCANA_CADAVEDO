@@ -8,7 +8,7 @@ repetir lo que ya está ahí.
 ## Mensaje para pegar
 
 > Yincana con niebla de guerra para mis primos de 6 y 10 años, en Cadavedo
-> (Valdés, Asturias), en agosto. El código base ya está y las 72 pruebas pasan:
+> (Valdés, Asturias), en agosto. El código base ya está y las 73 pruebas pasan:
 > ejecuta `python3 pruebas.py` antes de nada para confirmarlo. Abre también
 > `?demo` en el navegador para ver de qué va sin necesidad de GPS.
 >
@@ -25,7 +25,7 @@ repetir lo que ya está ahí.
 Funciona de punta a punta con GPS simulado: niebla, frío/caliente, sónar,
 desbloqueo por etiqueta, medallas, capítulos, modo autor, demo, persistencia
 entre recargas, etiqueta repetida, etiqueta adelantada, clave inventada y
-pantalla de cierre. Las 72 comprobaciones de `pruebas.py` pasan, y la demo
+pantalla de cierre. Las 73 comprobaciones de `pruebas.py` pasan, y la demo
 recorre los dos capítulos de punta a punta ella sola.
 
 Sin probar en la calle. Sin las imágenes de los mapas. Sin desplegar. Y las
@@ -99,9 +99,14 @@ estación para que la revelación sea sólo del cierre.
 ### 5 · Batería
 **Hecho la mitad.** El HUD ya no se repinta en cada fotograma: lejos de la
 estación no hay anillos girando y el dibujo es idéntico, así que sólo se repinta
-al llegar posición nueva. Medido: 5 repintados en 2 s en vez de los ~120 de un
-bucle a 60 fps. Hay una comprobación que lo vigila. Lo mismo en modo autor, que
-es donde te vas a pasar media hora quieto esperando precisión.
+al llegar posición nueva. Medido: **0 repintados en 2 s** parados y lejos, contra
+los ~120 de un bucle a 60 fps. Lo mismo en modo autor, que es donde te vas a
+pasar media hora quieto esperando precisión.
+
+De paso medí lo otro que podía doler: repintar la niebla entera con el rastro de
+tres días encima (2000 pisadas) tarda **10 ms**, así que girar el móvil no
+congela nada y no hay que tocarlo. Los dos números salen en cada ejecución de
+`pruebas.py`, para verlos si algún día se tuercen.
 
 **Falta la parte del GPS, y ahí hay que medir de verdad.** La API no tiene mando
 de frecuencia: el único interruptor es `enableHighAccuracy`, y cambiarlo obliga
