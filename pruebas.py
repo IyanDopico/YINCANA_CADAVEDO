@@ -344,7 +344,39 @@ def main():
         comprobar(pg.inner_text("#dist").strip() == "✓",
                   "el instrumento marca expedición completa",
                   pg.inner_text("#dist"))
+
+        comprobar(not pg.is_hidden("#capaFinal"), "sale la pantalla de cierre")
+        medallas = pg.eval_on_selector_all("#finMedallas span", "e => e.length")
+        comprobar(medallas == len(todas), "con todas las medallas",
+                  f"{medallas} de {len(todas)}")
+        comprobar("caminados" in pg.inner_text("#finResumen"),
+                  "y el resumen del recorrido", pg.inner_text("#finResumen"))
+        comprobar(len(pg.inner_text("#finTexto")) > 20,
+                  "y dice dónde está el tesoro de verdad")
         captura("5-final")
+
+        # El premio: el mapa entero despejado, sin una brizna de niebla.
+        opacos = pg.evaluate("""() => {
+            const c = document.getElementById('niebla');
+            const d = c.getContext('2d').getImageData(0,0,c.width,c.height).data;
+            let n = 0;
+            for (let i = 3; i < d.length; i += 4) if (d[i] > 40) n++;
+            return n;
+        }""")
+        comprobar(opacos == 0, "al terminar el mapa se queda entero a la vista",
+                  f"{opacos} píxeles siguen con niebla")
+
+        pg.click("#btnFinal")
+        pg.wait_for_timeout(400)
+        comprobar(pg.is_hidden("#capaFinal"), "el botón cierra la pantalla final")
+        if len(caps) > 1:
+            comprobar(pg.is_visible("#finBarra"),
+                      "y deja la barra para repasar los dos mapas")
+            pg.click("#finBarra button:first-of-type")
+            pg.wait_for_timeout(500)
+            comprobar(pg.evaluate("capPintado.id") == caps[0]["id"],
+                      "que devuelve al mapa del primer capítulo",
+                      pg.evaluate("capPintado.id"))
 
         # ── 8 · reinicio ────────────────────────────────────────────────
         pg.goto(f"{BASE}?reset")

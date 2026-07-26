@@ -8,7 +8,7 @@ repetir lo que ya está ahí.
 ## Mensaje para pegar
 
 > Yincana con niebla de guerra para mis primos de 6 y 10 años, en Cadavedo
-> (Valdés, Asturias), en agosto. El código base ya está y las 56 pruebas pasan:
+> (Valdés, Asturias), en agosto. El código base ya está y las 64 pruebas pasan:
 > ejecuta `python3 pruebas.py` antes de nada para confirmarlo. Abre también
 > `?demo` en el navegador para ver de qué va sin necesidad de GPS.
 >
@@ -23,8 +23,8 @@ repetir lo que ya está ahí.
 
 Funciona de punta a punta con GPS simulado: niebla, frío/caliente, sónar,
 desbloqueo por etiqueta, medallas, capítulos, modo autor, demo, persistencia
-entre recargas, etiqueta repetida, etiqueta adelantada y clave inventada.
-Las 56 comprobaciones de `pruebas.py` pasan.
+entre recargas, etiqueta repetida, etiqueta adelantada, clave inventada y
+pantalla de cierre. Las 64 comprobaciones de `pruebas.py` pasan.
 
 Sin probar en la calle. Sin las imágenes de los mapas. Sin desplegar. Y las
 coordenadas de las estaciones son de OpenStreetMap, no de campo: sirven para la
@@ -52,6 +52,16 @@ recuadros sale un aviso en rojo y en la salida va apartado en un bloque propio.
 Los botones de arriba cambian de mapa, y al coger señal salta solo al del sitio
 donde estés.
 
+### 6 · Pantalla final
+Al abrir la última estación sale el cierre: las tres medallas en fila, el título
+y el texto del tesoro, y cuántas estaciones y metros llevan andados. Al pulsar
+*Ver el mapa entero* se quita la niebla del todo —los dos mapas quedan
+despejados para siempre— y aparece una barra abajo para pasar de uno a otro y
+repasar el recorrido de los tres días.
+
+El texto de dónde está el tesoro se ha quitado de la medalla de la última
+estación para que la revelación sea sólo del cierre.
+
 ## Tareas, por orden
 
 ### 3 · Dos móviles, dos partidas
@@ -70,11 +80,6 @@ avance solo. Dime si merece la pena o si complica más de lo que aporta.
 El GPS de alta precisión en continuo se come el móvil en dos o tres horas y son
 tres días de juego. Mira si se puede bajar el ritmo cuando están lejos de la
 estación y subirlo al acercarse. Mide antes de optimizar.
-
-### 6 · Pantalla final
-Al abrir la última estación ahora solo sale un texto. Debería cerrar mejor: el
-mapa entero despejado, el recorrido de los tres días, las medallas y dónde está
-el tesoro de verdad.
 
 ### 7 · Pistas dentro de la etiqueta
 Las coordenadas y las pistas están en el código de la página. El de 10 podría
@@ -104,9 +109,9 @@ registro NDEF y la página solo lo pinte.
 | Antes de subir | Tarea 3, desplegar con HTTPS |
 | En el pueblo | Generar los dos mapas, marcar los puntos, anotar precisiones |
 | Después | Rellenar `CONFIG`, grabar las etiquetas, recorrido de prueba yo solo |
-| Reserva | Tareas 4 a 7, solo si sobra tiempo |
+| Reserva | Tareas 4, 5 y 7, solo si sobra tiempo |
 
-Si algo va justo, esto se cae por este orden: 7, 6, 5, 4. La tarea 3 no.
+Si algo va justo, esto se cae por este orden: 7, 5, 4. La tarea 3 no.
 
 Y el plan B de siempre: las pistas impresas en un sobre. Si muere un móvil o
 desaparece una etiqueta, la yincana sigue.

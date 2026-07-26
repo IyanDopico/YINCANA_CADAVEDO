@@ -163,6 +163,12 @@ footer{
   font-family:var(--sans); font-size:10px; letter-spacing:.24em;
   text-transform:uppercase; color:var(--oro);
 }
+.medallas{display:flex; gap:12px; font-size:46px; line-height:1}
+.medallas span{animation:aterriza .55s cubic-bezier(.2,1.4,.4,1) backwards}
+.resumen{
+  font-family:var(--mono); font-size:12px; letter-spacing:.04em;
+  color:var(--hueso-tenue); margin:0;
+}
 
 /* ---------- MODO AUTOR ----------
    El panel no tapa el mapa: ocupa el sitio del instrumento, debajo, y deja
@@ -214,7 +220,7 @@ body.autor #niebla{display:none}
   font-family:var(--sans); font-size:13px; color:var(--hueso-tenue);
   text-decoration:underline; text-underline-offset:3px; cursor:pointer;
 }
-#demoBarra{
+#demoBarra, #finBarra{
   position:fixed; left:50%; transform:translateX(-50%); z-index:70;
   bottom:calc(env(safe-area-inset-bottom) + 148px);
   display:flex; align-items:center; gap:8px;
@@ -223,12 +229,14 @@ body.autor #niebla{display:none}
   backdrop-filter:blur(8px);
 }
 #demoBarra .sello{color:var(--frio); margin-right:2px}
-#demoBarra button{
+#finBarra .sello{color:var(--oro); margin-right:2px}
+#demoBarra button, #finBarra button{
   font-family:var(--mono); font-size:12px; padding:6px 11px;
   border-radius:999px; border:1px solid var(--tinta); cursor:pointer;
   background:transparent; color:var(--hueso); touch-action:manipulation;
 }
-#demoBarra button:active{background:var(--tinta)}
+#demoBarra button:active, #finBarra button:active{background:var(--tinta)}
+#finBarra button.activo{border-color:var(--caliente); color:var(--caliente)}
 @media (prefers-reduced-motion:reduce){
   *{animation-duration:.01ms !important; transition-duration:.01ms !important}
 }
@@ -273,6 +281,16 @@ body.autor #niebla{display:none}
   <h1 id="logroNombre">—</h1>
   <p id="logroPista">—</p>
   <button class="boton" id="btnSeguir">Seguir</button>
+</div>
+
+<!-- Cierre de la expedición -->
+<div class="capa" id="capaFinal" hidden>
+  <div class="medallas" id="finMedallas"></div>
+  <span class="sello">Expedición completa</span>
+  <h1 id="finTitulo">—</h1>
+  <p id="finTexto">—</p>
+  <p class="resumen" id="finResumen">—</p>
+  <button class="boton" id="btnFinal">Ver el mapa entero</button>
 </div>
 
 <!-- Traslado de un capítulo al siguiente -->
@@ -495,6 +513,10 @@ function pintarNiebla(){
   gN.setTransform(dpr,0,0,dpr,0,0);
   gN.globalCompositeOperation = "source-over";
   gN.clearRect(0,0,W,H);
+
+  // Terminada la expedición el mapa se queda entero a la vista. Es el premio,
+  // y hace que valga la pena volver a abrir la página después.
+  if (!estacionActiva()) return;
 
   const g = gN.createLinearGradient(0,0,0,H);
   g.addColorStop(0,   "#1e2b39");
@@ -855,8 +877,10 @@ function celebrar(est){
   const siguiente = estacionActiva();
   document.getElementById("logroMedalla").textContent = est.medalla || "⭐";
   document.getElementById("logroNombre").textContent = est.nombre;
+  // El dónde está el tesoro se guarda para la pantalla final, que es la que
+  // cierra: aquí sólo se les dice que ya no queda nada por buscar.
   document.getElementById("logroPista").textContent =
-    siguiente ? siguiente.pista : CONFIG.finalTexto;
+    siguiente ? siguiente.pista : "Ya están todas. Dadle a Seguir.";
   document.getElementById("capaLogro").hidden = false;
 
   // En la demo nadie va a estar pulsando: se cierra sola y sigue el paseo.
@@ -880,6 +904,7 @@ function seguirDespuesDelLogro(){
     return;
   }
   aplicarCapitulo(cap);
+  if (!estacionActiva()){ mostrarFinal(); return; }
   mostrarPista();
 }
 
@@ -900,7 +925,67 @@ function avisoSimple(titulo, texto){
 }
 
 /* ══════════════════════════════════════════════════════════════
-   9 · PANTALLA ENCENDIDA
+   9 · CIERRE DE LA EXPEDICIÓN
+   ══════════════════════════════════════════════════════════════ */
+function metrosCaminados(){
+  let m = 0;
+  for (let i = 1; i < estado.rastro.length; i++)
+    m += distancia(estado.rastro[i-1][0], estado.rastro[i-1][1],
+                   estado.rastro[i][0],   estado.rastro[i][1]);
+  return m;
+}
+
+function mostrarFinal(){
+  pintarNiebla();      // ya no queda estación activa: esto deja el mapa entero
+  const cont = document.getElementById("finMedallas");
+  cont.innerHTML = "";
+  TODAS.forEach((e, i) => {
+    const s = document.createElement("span");
+    s.textContent = e.medalla || "⭐";
+    s.style.animationDelay = (i * 150) + "ms";
+    cont.appendChild(s);
+  });
+
+  document.getElementById("finTitulo").textContent = CONFIG.finalTitulo;
+  document.getElementById("finTexto").textContent  = CONFIG.finalTexto;
+
+  const m = metrosCaminados();
+  document.getElementById("finResumen").textContent =
+    `${TODAS.length} estaciones · ` +
+    (m < 1000 ? `${Math.round(m)} m` : `${(m/1000).toFixed(1)} km`) + " caminados";
+
+  document.getElementById("capaFinal").hidden = false;
+  abrirAudio();
+  [0,130,270,430,640].forEach((t,i) =>
+    setTimeout(() => pitido([660,880,1100,1320,1560][i], 220, .24), t));
+}
+
+/* Con la yincana terminada los dos mapas quedan despejados. La barra deja
+   pasar de uno a otro para ver el recorrido entero de los tres días. */
+function montarBarraFinal(){
+  if (CAPS.length < 2 || document.getElementById("finBarra")) return;
+  const barra = document.createElement("div");
+  barra.id = "finBarra";
+  barra.innerHTML = '<span class="sello">Recorrido</span>';
+  for (const c of CAPS){
+    const b = document.createElement("button");
+    b.textContent = c.nombre;
+    b.onclick = () => { aplicarCapitulo(c); marcarBarraFinal(); };
+    barra.appendChild(b);
+  }
+  document.body.appendChild(barra);
+  marcarBarraFinal();
+}
+
+function marcarBarraFinal(){
+  const barra = document.getElementById("finBarra");
+  if (!barra) return;
+  barra.querySelectorAll("button").forEach((b, i) =>
+    b.classList.toggle("activo", CAPS[i] === capPintado));
+}
+
+/* ══════════════════════════════════════════════════════════════
+   10 · PANTALLA ENCENDIDA
    ══════════════════════════════════════════════════════════════ */
 let cerrojo = null;
 async function mantenerPantalla(){
@@ -913,7 +998,7 @@ document.addEventListener("visibilitychange", () => {
 });
 
 /* ══════════════════════════════════════════════════════════════
-   10 · MODO AUTOR
+   11 · MODO AUTOR
    ══════════════════════════════════════════════════════════════ */
 let puntos = [];
 try{ puntos = JSON.parse(localStorage.getItem("yincana.autor") || "[]"); }catch(e){}
@@ -1072,7 +1157,7 @@ if (esAutor){
 }
 
 /* ══════════════════════════════════════════════════════════════
-   11 · MODO DEMO
+   12 · MODO DEMO
    GPS de mentira que recorre la ruta solo. Sirve para enseñar el juego sin
    salir de casa y para probar en un portátil, que no tiene GPS. Al llegar a
    una estación simula el toque de la etiqueta.
@@ -1157,6 +1242,8 @@ function montarDemo(){
     yaAvisado = false; dentroSeguidas = 0;
     document.getElementById("capaLogro").hidden = true;
     document.getElementById("capaTraslado").hidden = true;
+    document.getElementById("capaFinal").hidden = true;
+    document.getElementById("finBarra")?.remove();
     aplicarCapitulo(CAPS[0]);
     pintarNiebla(); pintarMedallero(); mostrarPista();
   };
@@ -1165,7 +1252,7 @@ function montarDemo(){
 }
 
 /* ══════════════════════════════════════════════════════════════
-   12 · ARRANQUE
+   13 · ARRANQUE
    ══════════════════════════════════════════════════════════════ */
 document.getElementById("nombrePueblo").textContent = CONFIG.pueblo;
 document.title = "Expedición · " + CONFIG.pueblo;
@@ -1202,6 +1289,12 @@ document.getElementById("btnTraslado").onclick = () => {
   arrancarSeguimiento();
 };
 
+document.getElementById("btnFinal").onclick = () => {
+  document.getElementById("capaFinal").hidden = true;
+  montarBarraFinal();     // no antes: taparía la propia pantalla de cierre
+  mostrarPista();
+};
+
 document.getElementById("btnEmpezar").onclick = () => {
   abrirAudio();
   if (esDemo){
@@ -1226,6 +1319,10 @@ if (!esAutor){
   pintarMedallero();
   mostrarPista();
   comprobarEtiqueta();
+  // Si vuelven a abrir la página con la yincana ya terminada, que puedan
+  // repasar los dos mapas en vez de encontrarse el juego mudo.
+  if (!estacionActiva() && document.getElementById("capaLogro").hidden)
+    montarBarraFinal();
   // Tocar una etiqueta recarga la página. Si ya habían empezado, retomamos
   // solos en vez de hacerles pulsar "Empezar" otra vez.
   if (!esDemo && (estado.rastro.length || estado.abiertas.length)){
