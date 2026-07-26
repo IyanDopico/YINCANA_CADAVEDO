@@ -183,6 +183,11 @@ def main():
         errores = []
         pg.on("pageerror", lambda e: errores.append(str(e)))
 
+        # ?reset ahora pregunta antes de borrar. Aceptamos siempre y guardamos
+        # el texto, que hay una comprobación que mira que salga de verdad.
+        dialogos = []
+        pg.on("dialog", lambda d: (dialogos.append(d.message), d.accept()))
+
         def captura(nombre):
             if args.capturas:
                 pg.screenshot(path=str(RAIZ / "capturas" / f"{nombre}.png"))
@@ -328,10 +333,16 @@ def main():
                       "una etiqueta adelantada no rompe el orden",
                       pg.inner_text("#logroNombre"))
 
+        antes = pg.evaluate(
+            "JSON.parse(localStorage.getItem('yincana.v1')).abiertas.length")
         pg.goto(f"{BASE}?k=noexiste000")
         pg.wait_for_timeout(600)
-        comprobar(pg.is_hidden("#capaLogro"),
-                  "una clave inventada no desbloquea nada")
+        comprobar(pg.evaluate(
+            "JSON.parse(localStorage.getItem('yincana.v1')).abiertas.length")
+            == antes, "una clave inventada no desbloquea nada")
+        comprobar("ESTA NO ES" in pg.inner_text("#logroNombre").upper(),
+                  "y lo dice, en vez de quedarse callada",
+                  pg.inner_text("#logroNombre"))
 
         # ── 6 · cambio de capítulo ──────────────────────────────────────
         if len(caps) > 1:
@@ -430,11 +441,16 @@ def main():
                       pg.evaluate("capPintado.id"))
 
         # ── 8 · reinicio ────────────────────────────────────────────────
+        dialogos.clear()
         pg.goto(f"{BASE}?reset")
         pg.wait_for_timeout(500)
         est = pg.evaluate("JSON.parse(localStorage.getItem('yincana.v1'))")
         comprobar(est["abiertas"] == [] and est["rastro"] == [],
                   "?reset deja la partida a cero", json.dumps(est)[:60])
+        # Es una dirección corta que se queda en el historial, y lo que borra
+        # es lo único que se llevan de recuerdo.
+        comprobar(any("borrar" in d.lower() for d in dialogos),
+                  "pero antes pregunta", str(dialogos)[:70])
 
         # ── 9 · dos móviles, dos partidas ───────────────────────────────
         # Cada móvil lleva su localStorage. Si a uno se le pasa una etiqueta
@@ -531,7 +547,6 @@ def main():
         comprobar(filas == 2, "la lista enseña los puntos marcados", f"{filas}")
         pg.eval_on_selector("#autor", "e => e.scrollTop = e.scrollHeight")
         captura("6b-autor-lista")
-        pg.once("dialog", lambda d: d.accept())
         pg.click("#aLista .item:last-child button")
         pg.wait_for_timeout(400)
         filas = pg.eval_on_selector_all("#aLista .item", "e => e.length")
@@ -640,7 +655,36 @@ def main():
         finally:
             ctx.set_offline(False)
 
-        # ── 13 · sin errores por el camino ──────────────────────────────
+        # ── 13 · una partida guardada que no vale ───────────────────────
+        # Puede venir de una versión anterior, de un guardado a medias o de un
+        # dedo curioso. Lo que no puede es dejar la página en blanco: ahí se
+        # acaba la yincana y no hay forma de recuperarla en mitad del monte.
+        print("\nPartida corrupta")
+        pg.evaluate("""() => localStorage.setItem('yincana.v1',
+            JSON.stringify({ rastro: null, abiertas: "no soy una lista" }))""")
+        pg.goto(BASE)
+        pg.wait_for_timeout(700)
+        comprobar(pg.inner_text("#nombrePueblo").strip() not in ("—", ""),
+                  "no deja la página en blanco", pg.inner_text("#nombrePueblo"))
+        forma = pg.evaluate(
+            "({r: Array.isArray(estado.rastro), a: Array.isArray(estado.abiertas)})")
+        comprobar(forma["r"] and forma["a"], "y el estado queda con la forma buena",
+                  str(forma))
+
+        # Esta pasa seguro: recapturas las coordenadas con ?modo=autor, salen
+        # claves nuevas, y el móvil aún tiene guardadas las de la prueba.
+        pg.evaluate("""() => localStorage.setItem('yincana.v1',
+            JSON.stringify({ rastro: [], abiertas: ["claveinventada"] }))""")
+        pg.goto(BASE)
+        pg.wait_for_timeout(700)
+        comprobar(pg.evaluate("estado.abiertas.length") == 0,
+                  "las claves de una partida vieja se descartan",
+                  str(pg.evaluate("estado.abiertas")))
+        comprobar(pg.evaluate("capPintado.id") == caps[0]["id"],
+                  "y se vuelve al primer capítulo, no a la yincana terminada",
+                  pg.evaluate("capPintado.id"))
+
+        # ── 14 · sin errores por el camino ──────────────────────────────
         print("\nConsola")
         comprobar(not errores, "ningún error de JavaScript", "; ".join(errores[:3]))
 

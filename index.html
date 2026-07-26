@@ -448,12 +448,28 @@ const esDemo  = params.has("demo");
 const CLAVE = esDemo ? "yincana.demo" : "yincana.v1";
 let mem = null; // respaldo si localStorage está bloqueado (previsualizaciones, modo privado)
 
+/* Lo guardado puede venir de una partida anterior con otras claves, de un
+   guardado a medias o de un dedo curioso. Con `rastro` a null la página se
+   queda en blanco al primer repintado, y ahí ya no hay yincana que salvar:
+   más vale perder una pisada rara que la partida entera. */
+function sanear(e){
+  const bueno = { rastro:[], abiertas:[] };
+  if (!e || typeof e !== "object") return bueno;
+  if (Array.isArray(e.rastro))
+    bueno.rastro = e.rastro.filter(p => Array.isArray(p) && p.length >= 2 &&
+      Number.isFinite(p[0]) && Number.isFinite(p[1]));
+  // Claves que ya no existen: pasa en cuanto recapturas las coordenadas y
+  // salen claves nuevas. Sin esto el móvil se cree la yincana terminada.
+  if (Array.isArray(e.abiertas))
+    bueno.abiertas = e.abiertas.filter(k => TODAS.some(x => x.k === k));
+  return bueno;
+}
+
 function leer(){
-  const vacio = { rastro:[], abiertas:[] };
   try{
     const s = localStorage.getItem(CLAVE);
-    return s ? JSON.parse(s) : vacio;
-  }catch(e){ return mem || vacio; }
+    return sanear(s ? JSON.parse(s) : null);
+  }catch(e){ return mem || { rastro:[], abiertas:[] }; }
 }
 function guardar(e){
   mem = e;
@@ -462,8 +478,13 @@ function guardar(e){
 
 let estado = esDemo ? { rastro:[], abiertas:[] } : leer();  // la demo siempre empieza limpia
 if (params.has("reset")){
-  estado = { rastro:[], abiertas:[] };
-  guardar(estado);
+  // La niebla despejada es lo único que se llevan de recuerdo y ?reset es una
+  // dirección corta que se queda en el historial: que no la borre un despiste.
+  if (esDemo || confirm("¿Borrar la partida y empezar de cero?\n\n" +
+                        "Se pierde todo el mapa que lleváis despejado.")){
+    estado = { rastro:[], abiertas:[] };
+    guardar(estado);
+  }
   history.replaceState(null,"",location.pathname);
 }
 
@@ -906,7 +927,13 @@ function comprobarEtiqueta(){
   history.replaceState(null, "", location.pathname);
 
   const est = TODAS.find(e => e.k === k);
-  if (!est) return;
+  // Pasa si regrabas una etiqueta con clave nueva y queda una vieja por ahí.
+  // Callarse es peor: se quedan mirando el móvil pensando que está roto.
+  if (!est){
+    avisoSimple("Esta no es",
+      "Esta etiqueta no es de la yincana. Seguid buscando la de la pista.");
+    return;
+  }
 
   if (estado.abiertas.includes(est.k)){
     avisoSimple("Ya la teníais", "Esta estación ya estaba encontrada. La siguiente está en otro sitio.");

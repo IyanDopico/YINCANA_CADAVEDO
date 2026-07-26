@@ -12,7 +12,7 @@ explicarle qué es Web Mercator ni qué es el RSSI.
 ## Órdenes
 
 ```bash
-python3 pruebas.py               # 82 comprobaciones con GPS simulado
+python3 pruebas.py               # 88 comprobaciones con GPS simulado
 python3 pruebas.py --capturas    # además deja pantallazos en capturas/
 python3 pruebas.py --ver         # con navegador visible, para depurar
 python3 mapa.py --capitulos      # genera los mapas del CONFIG y sus esquinas
@@ -136,6 +136,12 @@ puede disparar la alarma. `dentroSeguidas` lleva la cuenta.
 
 **El rastro se diezma a 10 m.** Guardar cada lectura llenaría `localStorage` y
 haría lento el repintado de la niebla.
+
+**Lo que sale de `localStorage` pasa por `sanear()`.** Con `rastro` a null la
+página se queda en blanco al primer repintado, y en mitad del monte eso es el
+final de la yincana. También descarta las claves que ya no están en el `CONFIG`:
+pasa en cuanto recapturas coordenadas y salen claves nuevas, y sin eso el móvil
+se cree la yincana terminada y arranca en el último capítulo.
 
 **El rastro es uno solo para toda la yincana, y los mapas son varios.** Se
 guarda entero, pero al pintar hay que filtrarlo con `dentroDelMapa()`: sin eso,

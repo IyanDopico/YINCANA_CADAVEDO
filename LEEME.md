@@ -39,7 +39,7 @@ pip install playwright && playwright install chromium
 python3 pruebas.py
 ```
 
-Simula el recorrido completo y valida 82 comportamientos. Con `--capturas`
+Simula el recorrido completo y valida 88 comportamientos. Con `--capturas`
 deja además los pantallazos en `capturas/`.
 
 ## Puesta en marcha
@@ -158,7 +158,9 @@ Otras direcciones útiles:
 
 - `?demo` — recorrido simulado, sin GPS.
 - `?modo=autor` — capturar coordenadas.
-- `?reset` — borrar la partida y empezar de cero.
+- `?reset` — borrar la partida y empezar de cero. Pregunta antes: es una
+  dirección corta, se queda en el historial, y lo que borra es el mapa que
+  llevan despejado.
 
 ## Antes del día
 
