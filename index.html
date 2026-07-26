@@ -694,7 +694,10 @@ const QUIENES = {
   orian:   { emoji:"🐢", color:"#4f9e78", nombre:"Orián"   },
   admin:   { emoji:"🧭", color:"#c8952f", nombre:"Admin"   },
 };
-let colorJugador = null;   // lo usa el HUD para el aro del marcador
+/* Se resuelve ya al cargar el script, no en pintarQuienSoy(): el mapa (y con él
+   la línea del rastro) se monta antes que montarJuego(), y si no llegaría tarde. */
+let colorJugador = (usuario && usuario !== "admin" && QUIENES[usuario])
+                 ? QUIENES[usuario].color : null;
 
 function pintarQuienSoy(){
   const el = document.getElementById("yo");
@@ -704,6 +707,8 @@ function pintarQuienSoy(){
   el.hidden = false;
   colorJugador = q.color;
   document.body.style.setProperty("--c-jugador", q.color);
+  // Por si la sesión se confirmó después de montarse el mapa.
+  if (rastroLinea) rastroLinea.setStyle({ color: q.color });
 
   // La carrera es de cada uno: la pantalla de arranque le habla a él, no a
   // "vosotros" como en la yincana en grupo de la v1. Su bicho en grande arriba,
@@ -1236,7 +1241,10 @@ function refrescarSpawns(){
 function refrescarRastroLinea(){
   const pts = estado.rastro.map(([la, lo]) => [la, lo]);
   if (!rastroLinea){
-    rastroLinea = L.polyline(pts, { color: "#c8952f", weight: 2, opacity: .5,
+    // De su color: al acabar se disuelve la niebla y queda el pueblo entero con
+    // su camino pintado encima. Es lo que se llevan de recuerdo.
+    rastroLinea = L.polyline(pts, { color: colorJugador || "#c8952f",
+      weight: 2.4, opacity: .55,
       lineJoin: "round", lineCap: "round", interactive: false }).addTo(map);
   } else {
     rastroLinea.setLatLngs(pts);

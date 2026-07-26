@@ -22,7 +22,7 @@ explicarle qué es Web Mercator ni qué es el RSSI.
 ## Órdenes
 
 ```bash
-python pruebas.py               # 92 comprobaciones con GPS simulado (incluye servidor)
+python pruebas.py               # 93 comprobaciones con GPS simulado (incluye servidor)
 python pruebas.py --capturas    # además deja pantallazos en capturas/
 python pruebas.py --ver         # con navegador visible, para depurar
 python pruebas_servidor.py      # pruebas del backend, sin navegador ni red

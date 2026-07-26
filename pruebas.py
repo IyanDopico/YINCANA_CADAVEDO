@@ -388,6 +388,11 @@ def main():
         comprobar(pg.evaluate("colorJugador") == "#8a6fb0",
                   "y su color va al marcador del mapa",
                   str(pg.evaluate("colorJugador")))
+        # El mapa se monta antes que montarJuego(): si el color llegara tarde,
+        # el rastro saldría del oro de siempre y nadie lo notaría hasta el final.
+        comprobar(pg.evaluate("rastroLinea && rastroLinea.options.color") == "#8a6fb0",
+                  "y también al rastro, que es el recuerdo que les queda",
+                  str(pg.evaluate("rastroLinea && rastroLinea.options.color")))
         com2 = pg.evaluate(
             "JSON.parse(localStorage.getItem('yincana.v1')).comenzado")
         comprobar(com2 == com1,
