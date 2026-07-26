@@ -39,7 +39,7 @@ pip install playwright && playwright install chromium
 python3 pruebas.py
 ```
 
-Simula el recorrido completo y valida 77 comportamientos. Con `--capturas`
+Simula el recorrido completo y valida 82 comportamientos. Con `--capturas`
 deja además los pantallazos en `capturas/`.
 
 ## Puesta en marcha
@@ -51,25 +51,34 @@ apeadero a La Regalina hay casi dos kilómetros— y en un solo mapa cada pisada
 despejaría el 0,13 %: caminarían un montón sin ver abrirse nada. Partido en
 dos, el casco va al 0,70 % por pisada y La Regalina al 2,38 %.
 
-Un `mapa.py` por capítulo:
+Los dos de una vez, sacando los recuadros del propio `index.html`:
 
 ```bash
 pip install pillow
-python3 mapa.py 43.5422 -6.3926 43.5505 -6.3852 --salida mapa-pueblo.jpg
+python3 mapa.py --capitulos
 ```
+
+Al terminar imprime un bloque `esquinas` por capítulo. Pégalos en su capítulo
+**tal cual**: son las esquinas reales de la imagen recortada, no las que había
+puestas, y esa diferencia importa. Los recuadros que hay ahora en `CONFIG` son
+los pedidos, no los recortados, así que hay que sustituirlos.
+
+También dice cuánto abre cada pisada en cada mapa. Por debajo del 0,5 % se hace
+lento; si sale así, aprieta el recuadro.
+
+Si quieres cambiar un recuadro, edítalo en `CONFIG` y vuelve a lanzarlo sólo
+para ese capítulo:
 
 ```bash
-python3 mapa.py 43.5528 -6.3755 43.5564 -6.3705 --salida mapa-regalina.jpg
+python3 mapa.py --capitulos regalina
 ```
 
-Los cuatro números son `sur oeste norte este`; si cambias de recuadro, sácalos
-de openstreetmap.org con la pestaña **Exportar**.
+Y para un mapa que no esté en el `CONFIG`, a mano con `sur oeste norte este`,
+sacados de openstreetmap.org con la pestaña **Exportar**:
 
-Cada ejecución imprime un bloque `esquinas`. Pégalo en el capítulo que
-corresponda de `index.html` **tal cual**: son las esquinas reales de la imagen
-recortada, no los números que pediste, y esa diferencia importa. Los recuadros
-que hay ahora en `CONFIG` son los pedidos, no los recortados, así que hay que
-sustituirlos por lo que imprima `mapa.py`.
+```bash
+python3 mapa.py 43.5422 -6.3926 43.5505 -6.3852 --salida prueba.jpg
+```
 
 Si no pones imagen no pasa nada: la app funciona igual y al despejar se ve una
 retícula.
@@ -94,6 +103,10 @@ la etiqueta— y las estaciones que ya están en el `CONFIG` en azul hueco, para
 comparar. Si un punto cae fuera de todos los recuadros sale un aviso en rojo:
 ese punto no se vería en el juego. Los botones de arriba cambian de mapa, y al
 coger señal salta solo al del sitio donde estés.
+
+Debajo tienes la lista de lo marcado, cada punto con el capítulo en el que cae y
+un aspa para borrarlo. Si uno sale torcido, se quita ese y ya: no hay que
+repetir los demás.
 
 Al terminar, *Copiar al portapapeles*. Te da dos cosas: las estaciones ya
 agrupadas por capítulo, listas para pegar en el `estaciones` que toque, y la URL

@@ -8,7 +8,7 @@ repetir lo que ya está ahí.
 ## Mensaje para pegar
 
 > Yincana con niebla de guerra para mis primos de 6 y 10 años, en Cadavedo
-> (Valdés, Asturias), en agosto. El código base ya está y las 77 pruebas pasan:
+> (Valdés, Asturias), en agosto. El código base ya está y las 82 pruebas pasan:
 > ejecuta `python3 pruebas.py` antes de nada para confirmarlo. Abre también
 > `?demo` en el navegador para ver de qué va sin necesidad de GPS.
 >
@@ -25,7 +25,7 @@ repetir lo que ya está ahí.
 Funciona de punta a punta con GPS simulado: niebla, frío/caliente, sónar,
 desbloqueo por etiqueta, medallas, capítulos, modo autor, demo, persistencia
 entre recargas, etiqueta repetida, etiqueta adelantada, clave inventada y
-pantalla de cierre. Las 77 comprobaciones de `pruebas.py` pasan, y la demo
+pantalla de cierre. Las 82 comprobaciones de `pruebas.py` pasan, y la demo
 recorre los dos capítulos de punta a punta ella sola.
 
 Sin probar en la calle. Sin las imágenes de los mapas. Sin desplegar. Y las
@@ -53,6 +53,14 @@ del `CONFIG` en azul hueco para comparar. Si un punto cae fuera de todos los
 recuadros sale un aviso en rojo y en la salida va apartado en un bloque propio.
 Los botones de arriba cambian de mapa, y al coger señal salta solo al del sitio
 donde estés.
+
+Debajo va la lista de lo marcado, cada punto con su capítulo y un aspa para
+borrarlo suelto: marcar bien un punto son treinta minutos parado esperando
+precisión, y que uno salga torcido no puede obligar a repetir los otros.
+
+Y `mapa.py --capitulos` genera las dos imágenes leyendo los recuadros del propio
+`index.html`, en vez de teclear ocho números en el pueblo. Imprime las esquinas
+reales de cada recorte y cuánto abre cada pisada en cada mapa.
 
 ### 3 · Dos móviles, dos partidas
 Se quedan las dos partidas separadas: cada uno ve abrirse **su** mapa y llena su

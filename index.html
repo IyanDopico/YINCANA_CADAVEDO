@@ -206,6 +206,23 @@ body.autor #niebla{display:none}
   color:#e07b6a; margin:0 0 14px;
 }
 .alerta[hidden]{display:none}
+#aLista{margin:0 0 14px}
+#aLista .item{
+  display:flex; align-items:center; gap:10px;
+  padding:9px 0; border-bottom:1px solid var(--tinta);
+}
+#aLista .item b{
+  flex:1; font-weight:600; min-width:0;
+  overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+}
+#aLista .item small{font-size:11px; color:var(--hueso-tenue); flex:0 0 auto}
+#aLista .item button{
+  flex:0 0 auto; width:28px; height:28px; border-radius:999px;
+  border:1px solid var(--tinta); background:transparent;
+  color:var(--hueso-tenue); font-size:13px; cursor:pointer;
+  touch-action:manipulation;
+}
+#aLista .item button:active{background:var(--tinta)}
 #autor h2{font-family:var(--serif); font-size:20px; font-weight:400; margin:0 0 4px}
 #autor .aviso{color:var(--hueso-tenue); font-family:var(--sans); font-size:13px; margin:0 0 18px; line-height:1.5}
 .campo{
@@ -329,6 +346,7 @@ body.autor #niebla{display:none}
     <button class="boton" id="aMarcar">Marcar punto</button>
     <button class="boton hueco" id="aBorrar">Borrar todo</button>
   </div>
+  <div id="aLista"></div>
   <pre id="aSalida">Sin puntos marcados todavía.</pre>
   <span class="enlace" id="aCopiar">Copiar al portapapeles</span>
 </div>
@@ -1161,6 +1179,45 @@ function claveAzar(){
     .map(b => b.toString(16).padStart(2,"0")).join("");
 }
 
+function guardarPuntos(){
+  try{ localStorage.setItem("yincana.autor", JSON.stringify(puntos)); }catch(e){}
+}
+
+/* Cada punto con su capítulo y su aspa. Marcar bien un punto cuesta media hora
+   de estar quieto esperando precisión: si uno sale torcido, borrarlo no puede
+   obligar a repetir los otros. */
+function pintarLista(){
+  repintar = true;
+  const cont = document.getElementById("aLista");
+  cont.innerHTML = "";
+  puntos.forEach((p, i) => {
+    const cap = capituloQueContiene(p.lat, p.lon);
+    const fila = document.createElement("div");
+    fila.className = "item";
+
+    const nombre = document.createElement("b");
+    nombre.textContent = p.nombre;
+
+    const donde = document.createElement("small");
+    donde.textContent = cap ? cap.nombre : "fuera del mapa";
+    if (!cap) donde.className = "mal";
+
+    const aspa = document.createElement("button");
+    aspa.textContent = "✕";
+    aspa.setAttribute("aria-label", "Borrar " + p.nombre);
+    aspa.onclick = () => {
+      if (!confirm(`¿Borrar «${p.nombre}»?`)) return;
+      puntos.splice(i, 1);
+      guardarPuntos();
+      pintarLista();
+      pintarSalida();
+    };
+
+    fila.append(nombre, donde, aspa);
+    cont.appendChild(fila);
+  });
+}
+
 /* Sale agrupado por capítulo para poder pegarlo directamente en el sitio que
    toca, y con los que no caen en ningún recuadro apartados y en mayúsculas:
    ese es justo el fallo que no quieres descubrir en el pueblo. */
@@ -1200,6 +1257,7 @@ if (esAutor){
   document.body.classList.add("autor");
   document.getElementById("autor").hidden = false;
   document.getElementById("capaInicio").hidden = true;
+  pintarLista();
   pintarSalida();
   requestAnimationFrame(fotogramaAutor);
 
@@ -1209,9 +1267,10 @@ if (esAutor){
                 || "Punto " + (puntos.length + 1);
     puntos.push({ k:claveAzar(), nombre,
                   lat:+pos.lat.toFixed(6), lon:+pos.lon.toFixed(6) });
-    try{ localStorage.setItem("yincana.autor", JSON.stringify(puntos)); }catch(e){}
+    guardarPuntos();
     document.getElementById("aNombre").value = "";
     document.getElementById("aN").textContent = "0";
+    pintarLista();
     pintarSalida();
     if (navigator.vibrate) navigator.vibrate(60);
   };
@@ -1220,6 +1279,7 @@ if (esAutor){
     if (!confirm("¿Borrar todos los puntos marcados?")) return;
     puntos = [];
     try{ localStorage.removeItem("yincana.autor"); }catch(e){}
+    pintarLista();
     pintarSalida();
   };
 

@@ -8,18 +8,27 @@ listo para pegar en index.html. La imagen y las coordenadas salen del mismo
 cálculo, así que no pueden descuadrarse entre sí.
 
 Uso:
-    python3 mapa.py 43.5330 -5.6700 43.5400 -5.6600
-    python3 mapa.py 43.5330 -5.6700 43.5400 -5.6600 --zoom 18
+    python3 mapa.py --capitulos                      # los del CONFIG, todos
+    python3 mapa.py --capitulos regalina             # sólo uno
+    python3 mapa.py 43.5330 -5.6700 43.5400 -5.6600 --salida mapa.jpg
+    python3 mapa.py 43.5330 -5.6700 43.5400 -5.6600 --zoom 18 --salida mapa.jpg
 
-Los cuatro números son: sur oeste norte este (grados decimales).
+Con `--capitulos` saca los recuadros y los nombres de archivo del propio
+`index.html`, que es lo suyo el día que estés en el pueblo: ocho números
+tecleados a mano son ocho ocasiones de equivocarse.
+
+A mano, los cuatro números son: sur oeste norte este (grados decimales).
 Sácalos de openstreetmap.org: encuadra el pueblo, pestaña "Exportar", y ahí
 tienes los cuatro límites del recuadro que estás viendo.
 
 Requiere Pillow:  pip install pillow
 """
 
-import argparse, io, math, sys, time, urllib.request
+import argparse, io, math, re, sys, time, urllib.request
+from pathlib import Path
 from PIL import Image
+
+RAIZ = Path(__file__).parent.resolve()
 
 TESELA = 256
 SERVIDOR = "https://tile.openstreetmap.org/{z}/{x}/{y}.png"
@@ -40,6 +49,14 @@ def tesela_a_grados(x, y, z):
     lon = x / n * 360.0 - 180.0
     lat = math.degrees(math.atan(math.sinh(math.pi * (1 - 2 * y / n))))
     return lat, lon
+
+
+def dist(la1, lo1, la2, lo2):
+    R = 6371000.0
+    dla, dlo = math.radians(la2 - la1), math.radians(lo2 - lo1)
+    h = (math.sin(dla / 2) ** 2 + math.cos(math.radians(la1))
+         * math.cos(math.radians(la2)) * math.sin(dlo / 2) ** 2)
+    return 2 * R * math.asin(min(1, math.sqrt(h)))
 
 
 def elegir_zoom(sur, oeste, norte, este, lado_max=2400):
@@ -64,17 +81,36 @@ def bajar(url, intentos=3):
             time.sleep(1.5 * (i + 1))
 
 
-def main():
-    p = argparse.ArgumentParser(description="Prepara mapa.jpg y sus esquinas.")
-    p.add_argument("sur", type=float); p.add_argument("oeste", type=float)
-    p.add_argument("norte", type=float); p.add_argument("este", type=float)
-    p.add_argument("--zoom", type=int, default=None)
-    p.add_argument("--salida", default="mapa.jpg")
-    a = p.parse_args()
+def leer_capitulos():
+    """Saca id, archivo de mapa y esquinas de cada capítulo de index.html.
 
-    sur, oeste = min(a.sur, a.norte), min(a.oeste, a.este)
-    norte, este = max(a.sur, a.norte), max(a.oeste, a.este)
-    z = a.zoom or elegir_zoom(sur, oeste, norte, este)
+    Trocea por el `id:` que abre cada capítulo, igual que `pruebas.py`, así que
+    ese campo tiene que ir primero. Sin ejecutar la página y sin dependencias:
+    esto se usa en el pueblo, con lo que haya en el portátil."""
+    txt = (RAIZ / "index.html").read_text(encoding="utf-8")
+    ini = txt.index("const CONFIG = {")
+    cuerpo = txt[ini: txt.index("\n};", ini)]
+
+    cortes = list(re.finditer(r'id:\s*"(\w+)"', cuerpo))
+    caps = []
+    for i, c in enumerate(cortes):
+        trozo = cuerpo[c.start(): cortes[i+1].start() if i+1 < len(cortes)
+                       else len(cuerpo)]
+        esq  = re.search(r"esquinas:\s*\{([^}]+)\}", trozo)
+        mapa = re.search(r'mapa:\s*"([^"]+)"', trozo)
+        if not esq or not mapa:
+            continue
+        nums = {k: float(v) for k, v in
+                re.findall(r"(\w+)\s*:\s*(-?[\d.]+)", esq.group(1))}
+        caps.append({"id": c.group(1), "mapa": mapa.group(1), **nums})
+    return caps
+
+
+def generar(sur, oeste, norte, este, salida, zoom=None):
+    """Descarga, cose y recorta. Devuelve las esquinas REALES del recorte."""
+    sur, norte = min(sur, norte), max(sur, norte)
+    oeste, este = min(oeste, este), max(oeste, este)
+    z = zoom or elegir_zoom(sur, oeste, norte, este)
 
     # Recuadro en píxeles globales del nivel de zoom
     fx0, fy0 = grados_a_tesela(norte, oeste, z)
@@ -115,24 +151,74 @@ def main():
     lat_n, lon_o = tesela_a_grados(tx0 + izq / TESELA, ty0 + arr / TESELA, z)
     lat_s, lon_e = tesela_a_grados(tx0 + der / TESELA, ty0 + aba / TESELA, z)
 
-    recorte.save(a.salida, quality=90)
-
-    R = 6371000.0
-    def dist(la1, lo1, la2, lo2):
-        dla, dlo = math.radians(la2 - la1), math.radians(lo2 - lo1)
-        h = (math.sin(dla / 2) ** 2 + math.cos(math.radians(la1))
-             * math.cos(math.radians(la2)) * math.sin(dlo / 2) ** 2)
-        return 2 * R * math.asin(min(1, math.sqrt(h)))
+    recorte.save(salida, quality=90)
 
     ancho = dist(lat_n, lon_o, lat_n, lon_e)
     alto  = dist(lat_n, lon_o, lat_s, lon_o)
 
-    print(f"\nGuardado {a.salida} · {recorte.width}x{recorte.height} px")
+    print(f"\nGuardado {salida} · {recorte.width}x{recorte.height} px")
     print(f"Cubre {ancho:.0f} m de ancho por {alto:.0f} m de alto "
-          f"({ancho/recorte.width:.2f} m por píxel)\n")
-    print("Pega esto tal cual en index.html:\n")
-    print(f"  esquinas: {{ norte: {lat_n:.6f}, sur: {lat_s:.6f}, "
-          f"oeste: {lon_o:.6f}, este: {lon_e:.6f} }},")
+          f"({ancho/recorte.width:.2f} m por píxel)")
+    # Cuánto abre cada pisada: es el número que decide si el juego se siente
+    # vivo o si caminan un montón sin ver nada.
+    huella = math.pi * 35 ** 2
+    print(f"Con radioNiebla 35 m, cada pisada despeja el "
+          f"{100*huella/(ancho*alto):.2f} % del mapa")
+
+    return lat_n, lat_s, lon_o, lon_e
+
+
+def esquinas_para_pegar(lat_n, lat_s, lon_o, lon_e):
+    return (f"  esquinas: {{ norte: {lat_n:.6f}, sur: {lat_s:.6f}, "
+            f"oeste: {lon_o:.6f}, este: {lon_e:.6f} }},")
+
+
+def main():
+    p = argparse.ArgumentParser(
+        description="Prepara las imágenes de mapa de la yincana y sus esquinas.")
+    p.add_argument("sur", type=float, nargs="?")
+    p.add_argument("oeste", type=float, nargs="?")
+    p.add_argument("norte", type=float, nargs="?")
+    p.add_argument("este", type=float, nargs="?")
+    p.add_argument("--zoom", type=int, default=None)
+    p.add_argument("--salida", default=None)
+    p.add_argument("--capitulos", nargs="*", metavar="ID",
+                   help="sacar los recuadros de index.html; sin argumentos, todos")
+    a = p.parse_args()
+
+    if a.capitulos is not None:
+        caps = leer_capitulos()
+        if not caps:
+            sys.exit("No encuentro capítulos en el CONFIG de index.html.")
+        if a.capitulos:
+            pedidos = set(a.capitulos)
+            sueltos = pedidos - {c["id"] for c in caps}
+            if sueltos:
+                sys.exit(f"No existe el capítulo {', '.join(sorted(sueltos))}. "
+                         f"Hay: {', '.join(c['id'] for c in caps)}.")
+            caps = [c for c in caps if c["id"] in pedidos]
+
+        hechos = []
+        for c in caps:
+            print(f"\n{'─'*54}\n{c['id']} → {c['mapa']}\n")
+            hechos.append((c["id"], generar(c["sur"], c["oeste"], c["norte"],
+                                            c["este"], c["mapa"], a.zoom)))
+
+        print(f"\n{'─'*54}")
+        print("Pega cada bloque en su capítulo de index.html, tal cual: son las")
+        print("esquinas reales del recorte, no las que había puestas.\n")
+        for cid, esq in hechos:
+            print(f"  // {cid}")
+            print(esquinas_para_pegar(*esq))
+        print("\nMapa © colaboradores de OpenStreetMap. Cita la fuente si lo publicas.")
+        return
+
+    if None in (a.sur, a.oeste, a.norte, a.este):
+        sys.exit("Dame los cuatro números (sur oeste norte este) o usa --capitulos.")
+
+    esq = generar(a.sur, a.oeste, a.norte, a.este, a.salida or "mapa.jpg", a.zoom)
+    print("\nPega esto tal cual en index.html:\n")
+    print(esquinas_para_pegar(*esq))
     print("\nMapa © colaboradores de OpenStreetMap. Cita la fuente si lo publicas.")
 
 

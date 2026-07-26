@@ -158,6 +158,14 @@ def main():
     comprobar(all(mapas) and len(set(mapas)) == len(mapas),
               "cada capítulo tiene su propia imagen de mapa", str(mapas))
 
+    # Si renombras un mapa en el CONFIG y no lo tocas en sw.js, la imagen no se
+    # cachea y el día sin cobertura sale la retícula en vez del pueblo.
+    sw = (RAIZ / "sw.js").read_text(encoding="utf-8")
+    sin_cachear = [m for m in mapas if m and m not in sw]
+    comprobar(not sin_cachear,
+              "sw.js cachea las imágenes de todos los capítulos",
+              "falta " + ", ".join(sin_cachear))
+
     srv = servir()
     esquinas = caps[0]["esquinas"]
     origen = (esquinas["sur"] + (esquinas["norte"] - esquinas["sur"]) * 0.25,
@@ -516,6 +524,23 @@ def main():
                   "avisa de que un punto cae fuera de todos los recuadros")
         comprobar("FUERA DE TODOS LOS MAPAS" in pg.inner_text("#aSalida"),
                   "y lo aparta en la salida para que no pase inadvertido")
+
+        # Marcar bien un punto son treinta minutos parado esperando precisión:
+        # que uno salga torcido no puede obligar a repetir los demás.
+        filas = pg.eval_on_selector_all("#aLista .item", "e => e.length")
+        comprobar(filas == 2, "la lista enseña los puntos marcados", f"{filas}")
+        pg.eval_on_selector("#autor", "e => e.scrollTop = e.scrollHeight")
+        captura("6b-autor-lista")
+        pg.once("dialog", lambda d: d.accept())
+        pg.click("#aLista .item:last-child button")
+        pg.wait_for_timeout(400)
+        filas = pg.eval_on_selector_all("#aLista .item", "e => e.length")
+        comprobar(filas == 1, "se puede borrar uno suelto sin tocar los otros",
+                  f"quedan {filas}")
+        comprobar("El lavadero" in pg.inner_text("#aLista"),
+                  "y el que queda es el bueno")
+        comprobar(pg.is_hidden("#aAlerta"),
+                  "y el aviso de fuera del mapa se retira con él")
 
         # ── 11 · modo demo ──────────────────────────────────────────────
         # Tiene que funcionar sin permiso de geolocalización: es su motivo de
