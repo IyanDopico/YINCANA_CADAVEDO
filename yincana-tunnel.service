@@ -1,0 +1,27 @@
+# Servicio systemd para el túnel de Cloudflare de la yincana.
+# Corre como el usuario iyan y usa el binario de ~/.local/bin y la config de
+# ~/.cloudflared (la que genera 'cloudflared tunnel create/route').
+#
+#   sudo cp yincana-tunnel.service /etc/systemd/system/yincana-tunnel.service
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now yincana-tunnel
+#   systemctl status yincana-tunnel
+#   journalctl -u yincana-tunnel -f
+#
+# Levanta después de yincana.service (la API): no tiene sentido el túnel sin algo
+# que servir en localhost:8000.
+
+[Unit]
+Description=Cloudflare Tunnel de la yincana (yincana.iyando.qzzz.io)
+After=network.target yincana.service
+Wants=yincana.service
+
+[Service]
+Type=simple
+User=iyan
+ExecStart=/home/iyan/.local/bin/cloudflared tunnel --no-autoupdate --config /home/iyan/.cloudflared/config.yml run yincana
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

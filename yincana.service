@@ -1,0 +1,23 @@
+# Servicio systemd para el servidor de la yincana.
+#
+#   sudo cp yincana.service /etc/systemd/system/yincana.service
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now yincana
+#   systemctl status yincana
+#
+# Mira los logs con:  journalctl -u yincana -f
+
+[Unit]
+Description=Servidor de la yincana (API + estático)
+After=network.target
+
+[Service]
+Type=simple
+User=iyan
+WorkingDirectory=/home/iyan/YINCANA_CADAVEDO
+ExecStart=/usr/bin/python /home/iyan/YINCANA_CADAVEDO/servidor.py --puerto 8000
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

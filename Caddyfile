@@ -1,0 +1,34 @@
+# Caddyfile — HTTPS + estático + API de la yincana en esta máquina.
+#
+# Caddy da el HTTPS automático (la geolocalización lo exige en producción) y
+# reparte el tráfico: /api va al servidor de Python, el resto son ficheros
+# estáticos que sirve el propio Caddy.
+#
+#   1. Instala Caddy (un binario):  https://caddyserver.com/docs/install
+#   2. Cambia yincana.example.com por tu dominio, apuntando a esta máquina.
+#   3. Arranca el API:   python servidor.py --puerto 8000   (o el servicio systemd)
+#   4. Arranca Caddy:    caddy run --config Caddyfile
+#
+# OJO: es `handle`, no `handle_path`. servidor.py enruta sobre /api/contenido y
+# /api/progreso enteros; si Caddy quitara el prefijo /api, no encontraría nada.
+
+yincana.example.com {
+	encode gzip
+
+	handle /api/* {
+		reverse_proxy localhost:8000
+	}
+	handle {
+		root * /home/iyan/YINCANA_CADAVEDO
+		file_server
+	}
+}
+
+# --- Alternativa sin dominio, para probar en la red local ---
+# Caddy emite un certificado local de confianza para `localhost`. Útil para ver
+# el HTTPS antes de tener dominio; para el móvil hace falta el dominio de verdad.
+#
+# localhost {
+# 	handle /api/* { reverse_proxy localhost:8000 }
+# 	handle { root * /home/iyan/YINCANA_CADAVEDO ; file_server }
+# }
