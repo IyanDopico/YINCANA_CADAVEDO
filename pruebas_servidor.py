@@ -13,6 +13,7 @@ Devuelve 0 si pasa todo, 1 si algo falla.
 import json
 import unittest
 import urllib.request
+from contextlib import closing
 from http.client import HTTPConnection
 
 import servidor
@@ -25,26 +26,31 @@ def bd_memoria():
     return c
 
 
-class Cuentas(unittest.TestCase):
+class Sesiones(unittest.TestCase):
     def setUp(self):
         self.c = bd_memoria()
 
     def tearDown(self):
         self.c.close()
 
-    def test_token_corto_y_unico(self):
-        t1 = servidor.crear_cuenta(self.c, "Martina")
-        t2 = servidor.crear_cuenta(self.c, "Nico")
-        self.assertEqual(len(t1), 6)
-        self.assertNotEqual(t1, t2)
-        self.assertEqual(servidor.jugador(self.c, t1)["nombre"], "Martina")
+    def test_crear_y_leer(self):
+        sid = servidor.crear_sesion(self.c, "himilce")
+        self.assertGreater(len(sid), 20)
+        self.assertEqual(servidor.usuario_de_sesion(self.c, sid), "himilce")
 
-    def test_nombre_vacio_cae_en_defecto(self):
-        t = servidor.crear_cuenta(self.c, "   ")
-        self.assertEqual(servidor.jugador(self.c, t)["nombre"], "Jugador")
+    def test_sesiones_distintas(self):
+        s1 = servidor.crear_sesion(self.c, "himilce")
+        s2 = servidor.crear_sesion(self.c, "orian")
+        self.assertNotEqual(s1, s2)
 
-    def test_token_desconocido_es_none(self):
-        self.assertIsNone(servidor.jugador(self.c, "nohay0"))
+    def test_sid_desconocido_es_none(self):
+        self.assertIsNone(servidor.usuario_de_sesion(self.c, "nohay"))
+        self.assertIsNone(servidor.usuario_de_sesion(self.c, None))
+
+    def test_borrar_invalida(self):
+        sid = servidor.crear_sesion(self.c, "admin")
+        servidor.borrar_sesion(self.c, sid)
+        self.assertIsNone(servidor.usuario_de_sesion(self.c, sid))
 
 
 class Contenido(unittest.TestCase):
@@ -78,7 +84,7 @@ class Contenido(unittest.TestCase):
 class Progreso(unittest.TestCase):
     def setUp(self):
         self.c = bd_memoria()
-        self.t = servidor.crear_cuenta(self.c, "Martina")
+        self.t = "himilce"   # el progreso se indexa por usuario
 
     def tearDown(self):
         self.c.close()
@@ -134,6 +140,8 @@ class HTTP(unittest.TestCase):
         cls.dir_cache = tempfile.mkdtemp(prefix="teselas_")
         cls._cache_original = servidor.CACHE_TESELAS
         servidor.CACHE_TESELAS = servidor.Path(cls.dir_cache)
+        cls._pin_original = servidor.PIN_ADMIN
+        servidor.PIN_ADMIN = "1234"     # PIN de admin para las pruebas
         cls.srv = servidor.Servidor(("127.0.0.1", 0), servidor.Handler)
         cls.puerto = cls.srv.server_address[1]
         import threading
@@ -146,6 +154,7 @@ class HTTP(unittest.TestCase):
         cls.srv.server_close()
         servidor.BD = cls._bd_original
         servidor.CACHE_TESELAS = cls._cache_original
+        servidor.PIN_ADMIN = cls._pin_original
         import os
         import shutil
         for suf in ("", "-wal", "-shm"):
@@ -155,18 +164,33 @@ class HTTP(unittest.TestCase):
                 pass
         shutil.rmtree(cls.dir_cache, ignore_errors=True)
 
-    def pedir(self, metodo, ruta, cuerpo=None):
+    def pedir(self, metodo, ruta, cuerpo=None, cookie=None, origen="same-origin"):
         con = HTTPConnection("127.0.0.1", self.puerto, timeout=5)
         datos = json.dumps(cuerpo).encode() if cuerpo is not None else None
-        cabeceras = {"Content-Type": "application/json"} if datos else {}
-        con.request(metodo, ruta, body=datos, headers=cabeceras)
+        cab = {}
+        if datos:
+            cab["Content-Type"] = "application/json"
+        if origen is not None:        # imita el fetch de la página (mismo origen)
+            cab["Sec-Fetch-Site"] = origen
+        if cookie:
+            cab["Cookie"] = cookie
+        con.request(metodo, ruta, body=datos, headers=cab)
         r = con.getresponse()
+        self.ultima_cookie = r.getheader("Set-Cookie")
         texto = r.read().decode()
         con.close()
         try:
             return r.status, (json.loads(texto) if texto else None)
         except json.JSONDecodeError:
             return r.status, texto   # respuesta no-JSON (el estático)
+
+    def login(self, usuario, pin=None, origen="same-origin"):
+        cuerpo = {"usuario": usuario}
+        if pin is not None:
+            cuerpo["pin"] = pin
+        code, body = self.pedir("POST", "/api/login", cuerpo, origen=origen)
+        cookie = self.ultima_cookie.split(";", 1)[0] if self.ultima_cookie else None
+        return code, body, cookie
 
     def pedir_bin(self, ruta):
         """Como pedir(), pero para respuestas binarias: devuelve
@@ -183,41 +207,65 @@ class HTTP(unittest.TestCase):
         code, _ = self.pedir("GET", "/api/contenido")
         self.assertEqual(code, 404)
 
-    def test_flujo_cuenta_progreso_contenido(self):
-        # crear cuenta
-        code, r = self.pedir("POST", "/api/cuenta", {"nombre": "Nico"})
+    def test_login_crio_sin_pin(self):
+        code, body, cookie = self.login("himilce")
         self.assertEqual(code, 200)
-        token = r["token"]
-        self.assertEqual(len(token), 6)
+        self.assertEqual(body["usuario"], "himilce")
+        self.assertTrue(cookie.startswith("__Host-sesion="))
+        # /api/me con y sin cookie
+        _, me = self.pedir("GET", "/api/me", cookie=cookie)
+        self.assertEqual(me["usuario"], "himilce")
+        _, me = self.pedir("GET", "/api/me")
+        self.assertIsNone(me["usuario"])
 
-        # progreso arranca vacío
-        code, p = self.pedir("GET", f"/api/progreso?u={token}")
+    def test_login_usuario_desconocido(self):
+        code, _, _ = self.login("intruso")
+        self.assertEqual(code, 400)
+
+    def test_admin_pin(self):
+        self.assertEqual(self.login("admin", "1234")[0], 200)
+        self.assertEqual(self.login("admin", "0000")[0], 403)   # PIN incorrecto
+        self.assertEqual(self.login("admin")[0], 403)           # sin PIN
+
+    def test_logout_invalida(self):
+        _, _, cookie = self.login("orian")
+        self.pedir("POST", "/api/logout", cookie=cookie)
+        _, me = self.pedir("GET", "/api/me", cookie=cookie)
+        self.assertIsNone(me["usuario"])
+
+    def test_progreso_por_sesion(self):
+        _, _, cookie = self.login("himilce")
+        code, p = self.pedir("GET", "/api/progreso", cookie=cookie)
         self.assertEqual(code, 200)
         self.assertEqual(p["abiertas"], [])
-
-        # subir progreso y recuperarlo fusionado
-        code, p = self.pedir("POST", f"/api/progreso?u={token}",
-                             {"abiertas": ["a7f3c1"], "rastro": [[43.5, -6.3]]})
+        code, p = self.pedir("POST", "/api/progreso",
+                             {"abiertas": ["a7f3c1"]}, cookie=cookie)
         self.assertEqual(code, 200)
         self.assertEqual(p["abiertas"], ["a7f3c1"])
-        code, p = self.pedir("GET", f"/api/progreso?u={token}")
-        self.assertEqual(p["abiertas"], ["a7f3c1"])
+        # sin cookie no hay sesión
+        self.assertEqual(self.pedir("GET", "/api/progreso")[0], 401)
 
-        # publicar contenido y leerlo
+    def test_csrf_bloquea_escritura_de_otro_origen(self):
+        _, _, cookie = self.login("himilce")
+        # con cookie válida pero petición de otro sitio -> 403
+        self.assertEqual(
+            self.pedir("POST", "/api/progreso", {"abiertas": ["x"]},
+                       cookie=cookie, origen="cross-site")[0], 403)
+        # sin señal de origen -> también 403
+        self.assertEqual(
+            self.pedir("POST", "/api/progreso", {"abiertas": ["x"]},
+                       cookie=cookie, origen=None)[0], 403)
+
+    def test_contenido_via_http(self):
         contenido = {"pueblo": "Cadavedo",
                      "capitulos": [{"esquinas": {"norte": 1, "sur": 0,
                                                  "oeste": 0, "este": 1},
                                     "estaciones": []}]}
-        from contextlib import closing
         with closing(servidor.conectar()) as c:
             servidor.publicar_contenido(c, contenido)
         code, r = self.pedir("GET", "/api/contenido")
         self.assertEqual(code, 200)
         self.assertEqual(r["pueblo"], "Cadavedo")
-
-    def test_progreso_sin_token_da_400(self):
-        code, _ = self.pedir("GET", "/api/progreso")
-        self.assertEqual(code, 400)
 
     def test_sirve_el_estatico(self):
         code, _ = self.pedir("GET", "/index.html")

@@ -75,6 +75,10 @@ header{
 /* ---------- MAPA ---------- */
 #lienzos{
   flex:1 1 auto; position:relative; overflow:hidden;
+  /* Contexto de apilado propio: si no, los paneles de Leaflet (z-index hasta
+     700) se cuelan por encima de las capas a pantalla completa (login, medalla,
+     cierre…) y las tapan. Con z-index:0 quedan contenidos aquí dentro. */
+  z-index:0;
   /* Retícula de levantamiento: se ve por debajo mientras cargan las teselas,
      así nunca hay un vacío negro. */
   background:
@@ -84,8 +88,9 @@ header{
 }
 /* El mapa vivo (Leaflet) ocupa todo el contenedor. */
 #mapa{ position:absolute; inset:0; background:transparent; }
-/* El HUD (marcador + sónar) va por encima del mapa, sin capturar toques. */
-#hud{ position:absolute; inset:0; width:100%; height:100%; pointer-events:none; z-index:500; }
+/* El HUD (marcador + sónar) va por encima del mapa y de los marcadores de
+   Leaflet, sin capturar toques. */
+#hud{ position:absolute; inset:0; width:100%; height:100%; pointer-events:none; z-index:690; }
 /* La niebla es una capa de Leaflet en su propio panel, entre teselas y marcadores. */
 .leaflet-niebla-pane{ z-index:350; pointer-events:none; }
 .leaflet-container{ background:transparent; font-family:var(--sans); }
@@ -166,6 +171,26 @@ body.encima footer{
   touch-action:manipulation;
 }
 .boton.hueco{background:transparent; color:var(--hueso-tenue); border:1px solid var(--tinta)}
+
+/* ---------- LOGIN ---------- */
+.quienes{display:flex; flex-direction:column; gap:14px; width:min(340px,80vw)}
+.quien{
+  display:flex; align-items:center; gap:16px;
+  padding:16px 20px; border-radius:16px; cursor:pointer;
+  border:2px solid var(--c); background:color-mix(in srgb, var(--c) 16%, transparent);
+  color:var(--hueso); touch-action:manipulation;
+}
+.quien span{font-size:40px; line-height:1}
+.quien b{font-family:var(--serif); font-size:22px; font-weight:400}
+.quien:active{background:color-mix(in srgb, var(--c) 30%, transparent)}
+#loginPin{display:flex; flex-direction:column; align-items:center; gap:10px; margin-top:6px}
+#loginPin[hidden]{display:none}   /* el display:flex de arriba pisa al [hidden] por defecto */
+#loginPin input{
+  width:180px; text-align:center; letter-spacing:.5em; font-size:22px;
+  padding:12px; border-radius:10px; border:1px solid var(--tinta);
+  background:var(--niebla-alta); color:var(--hueso); font-family:var(--mono);
+}
+#loginPin .fila{display:flex; gap:10px}
 
 .medalla{
   font-size:76px; line-height:1;
@@ -319,6 +344,25 @@ body.autor #niebla{display:none}
   </div>
   <div class="pista"><span class="eyebrow" id="pistaTitulo">Pista</span><span id="pistaTexto">…</span></div>
 </footer>
+
+<!-- Pantalla de identidad (login). Orián no lee: cada uno por su emoji y color. -->
+<div class="capa" id="login" hidden>
+  <span class="sello">¿Quién eres?</span>
+  <div class="quienes">
+    <button class="quien" data-u="himilce" style="--c:#8a6fb0"><span>🦊</span><b>Himilce</b></button>
+    <button class="quien" data-u="orian" style="--c:#4f9e78"><span>🐢</span><b>Orián</b></button>
+    <button class="quien" data-u="admin" style="--c:#c8952f"><span>🧭</span><b>Admin</b></button>
+  </div>
+  <div id="loginPin" hidden>
+    <input id="pinInput" type="tel" inputmode="numeric" maxlength="4"
+           pattern="[0-9]*" placeholder="PIN de admin" autocomplete="off">
+    <div class="fila">
+      <button class="boton" id="pinEntrar">Entrar</button>
+      <button class="boton hueco" id="pinAtras">Atrás</button>
+    </div>
+    <p class="alerta" id="loginErr" hidden></p>
+  </div>
+</div>
 
 <!-- Pantalla de arranque -->
 <div class="capa" id="capaInicio">
@@ -529,28 +573,24 @@ async function refrescarContenido(){
 }
 
 /* ══════════════════════════════════════════════════════════════
-   1c · IDENTIDAD Y SINCRONIZACIÓN (opcional)
-   Sin token se juega igual que siempre, todo en local. Con ?u=<token> el
-   progreso se respalda en el servidor y se puede retomar en otro móvil. Todo
-   mejor-esfuerzo: nada de esto bloquea el juego sin cobertura.
+   1c · IDENTIDAD Y SINCRONIZACIÓN (login con cookie de sesión)
+   Tres usuarios: admin (con PIN), Himilce y Orián (botón directo). El login deja
+   una cookie de sesión persistente en el servidor; aquí sólo se cachea el nombre
+   de usuario para arrancar sin esperar a la red (y sin cobertura). El progreso
+   se respalda en el servidor por usuario; todo mejor-esfuerzo.
    ══════════════════════════════════════════════════════════════ */
-const CLAVE_JUGADOR = "yincana.jugador";
-let token = null;
+const CLAVE_USUARIO = "yincana.usuario";
+let usuario = null;
 if (!esDemo && !esAutor){
-  try{
-    token = params.get("u") || localStorage.getItem(CLAVE_JUGADOR) || null;
-    // Una etiqueta recarga con ?k= y sin ?u=, así que el token tiene que
-    // sobrevivir en localStorage o se pierde en el primer toque.
-    if (token) localStorage.setItem(CLAVE_JUGADOR, token);
-  }catch(_){}
+  try{ usuario = localStorage.getItem(CLAVE_USUARIO) || null; }catch(_){}
 }
 
 let syncEnCurso = false, syncPendiente = false, syncTimer = null;
 function sincronizar(){
-  if (!token || esDemo || esAutor) return;
+  if (!usuario || esDemo || esAutor) return;
   if (!navigator.onLine || syncEnCurso){ syncPendiente = true; return; }
   syncEnCurso = true; syncPendiente = false;
-  fetch("api/progreso?u=" + encodeURIComponent(token), {
+  fetch("api/progreso", {
     method:"POST", headers:{ "Content-Type":"application/json" },
     body: JSON.stringify({ abiertas:estado.abiertas, capturas:estado.capturas,
                            rastro:estado.rastro }),
@@ -564,20 +604,19 @@ function sincronizar(){
 /* guardar() se llama a cada pisada: se agrupa para no soltar un POST por cada
    diez metros caminados. */
 function programarSync(){
-  if (!token || esDemo || esAutor) return;
+  if (!usuario || esDemo || esAutor) return;
   clearTimeout(syncTimer);
   syncTimer = setTimeout(sincronizar, 4000);
 }
 window.addEventListener("online", sincronizar);
 
-/* Retomar en otro móvil: si este aún no tiene partida y el token tiene progreso
-   guardado en el servidor, lo rehidrata. Sólo mientras siga sin empezar, para
-   no pisar lo que hagan mientras carga. Mejor-esfuerzo. */
+/* Retomar en otro móvil: si este aún no tiene partida y el usuario tiene
+   progreso en el servidor, lo rehidrata. Mejor-esfuerzo. */
 async function traerProgreso(){
-  if (!token || esDemo || esAutor) return;
+  if (!usuario || esDemo || esAutor) return;
   if (estado.abiertas.length || estado.rastro.length || estado.capturas.length) return;
   try{
-    const r = await fetch("api/progreso?u=" + encodeURIComponent(token), { cache:"no-store" });
+    const r = await fetch("api/progreso", { cache:"no-store" });
     if (!r.ok) return;
     const p = sanear(await r.json());
     if (siguiendo || estado.abiertas.length || estado.rastro.length || estado.capturas.length) return;
@@ -586,6 +625,41 @@ async function traerProgreso(){
     aplicarCapitulo(capituloActivo());   // remonta el mapa reconstruyendo la niebla
     pintarMedallero(); mostrarPista();
   }catch(_){}
+}
+
+/* Confirma con el servidor quién hay logueado (cuando hay red). Si la sesión
+   caducó o se cerró en otro sitio, olvida el usuario cacheado. */
+async function confirmarSesion(){
+  if (esDemo || esAutor) return;
+  try{
+    const r = await fetch("api/me", { cache:"no-store" });
+    if (!r.ok) return;
+    const u = (await r.json()).usuario || null;
+    if (u){
+      usuario = u;
+      try{ localStorage.setItem(CLAVE_USUARIO, u); }catch(_){}
+    } else if (usuario){
+      try{ localStorage.removeItem(CLAVE_USUARIO); }catch(_){}
+      usuario = null;
+    }
+  }catch(_){}
+}
+
+/* Login: el servidor pone la cookie de sesión. Al volver, recarga la página
+   para arrancar por el camino normal (idempotente, como la recarga por etiqueta). */
+async function iniciarSesion(u, pin){
+  const cuerpo = (pin != null) ? { usuario:u, pin } : { usuario:u };
+  const r = await fetch("api/login", {
+    method:"POST", headers:{ "Content-Type":"application/json" },
+    body: JSON.stringify(cuerpo),
+  });
+  if (!r.ok){
+    const e = await r.json().catch(() => ({}));
+    throw new Error(e.error || "No se pudo entrar");
+  }
+  usuario = (await r.json()).usuario;
+  try{ localStorage.setItem(CLAVE_USUARIO, usuario); }catch(_){}
+  return usuario;
 }
 
 // La demo guarda aparte para no pisar la partida de verdad.
@@ -1687,28 +1761,61 @@ if (esDemo){
   document.getElementById("btnEmpezar").textContent = "Ver la demo";
 }
 
-if (!esAutor){
+/* El cuerpo del arranque del juego. Se llama cuando ya hay identidad (o en la
+   demo/autor, que no piden login). */
+function montarJuego(){
   dimensionar();
   pintarMedallero();
   mostrarPista();
   comprobarEtiqueta();
   // Con servidor: refresca el contenido para la próxima carga, respalda el
-  // progreso y, en un móvil nuevo con el mismo token, lo retoma. Todo
+  // progreso y, en un móvil nuevo con el mismo usuario, lo retoma. Todo
   // mejor-esfuerzo; sin red no pasa nada.
   if (!esDemo){
     refrescarContenido();
     traerProgreso();
     sincronizar();
   }
-  // Si vuelven a abrir la página con la yincana ya terminada, que puedan
-  // repasar los dos mapas en vez de encontrarse el juego mudo.
-  if (!estacionActiva() && document.getElementById("capaLogro").hidden)
-    montarBarraFinal();
   // Tocar una etiqueta recarga la página. Si ya habían empezado, retomamos
   // solos en vez de hacerles pulsar "Empezar" otra vez.
   if (!esDemo && (estado.rastro.length || estado.abiertas.length || estado.capturas.length)){
     document.body.addEventListener("pointerdown", abrirAudio, { once:true });
     if (document.getElementById("capaLogro").hidden) arrancarSeguimiento();
+  }
+}
+
+/* Pantalla de identidad: cada crío con su botón; admin con PIN. Al entrar, el
+   servidor deja la cookie y se recarga la página para arrancar por el camino
+   normal (idempotente, como la recarga por etiqueta). */
+function mostrarLogin(){
+  const cap = document.getElementById("login");
+  const pinBox = document.getElementById("loginPin");
+  const err = document.getElementById("loginErr");
+  document.getElementById("capaInicio").hidden = true;
+  cap.hidden = false;
+
+  async function entrar(u, pin){
+    err.hidden = true;
+    try{ await iniciarSesion(u, pin); location.reload(); }
+    catch(e){ err.textContent = e.message || "No se pudo entrar"; err.hidden = false; }
+  }
+  cap.querySelectorAll(".quien").forEach(b => b.onclick = () => {
+    if (b.dataset.u === "admin"){
+      pinBox.hidden = false;
+      document.getElementById("pinInput").focus();
+    } else entrar(b.dataset.u);
+  });
+  document.getElementById("pinEntrar").onclick = () =>
+    entrar("admin", document.getElementById("pinInput").value || "");
+  document.getElementById("pinAtras").onclick = () => { pinBox.hidden = true; };
+}
+
+if (!esAutor){
+  if (esDemo || usuario){
+    montarJuego();
+    if (usuario) confirmarSesion();   // en segundo plano, por si la sesión caducó
+  } else {
+    mostrarLogin();
   }
 }
 

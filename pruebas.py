@@ -25,6 +25,13 @@ def teselas_falsas(ctx):
     ctx.route("**/tiles/**", lambda r: r.fulfill(
         status=200, content_type="image/png", body=_PNG_TESELA))
 
+def sembrar_usuario(ctx, usuario="himilce"):
+    """La v2 pide login. En las fases contra el servidor estático (sin /api) se
+    siembra el usuario cacheado para saltar el login; las llamadas a /api son
+    mejor-esfuerzo, así que el juego arranca igual."""
+    ctx.add_init_script(
+        f"try{{localStorage.setItem('yincana.usuario','{usuario}')}}catch(e){{}}")
+
 RAIZ = Path(__file__).parent.resolve()
 BASE = None          # se fija al arrancar el servidor, con puerto libre
 
@@ -214,6 +221,7 @@ def main():
             geolocation={"latitude": origen[0], "longitude": origen[1],
                          "accuracy": 9})
         teselas_falsas(ctx)
+        sembrar_usuario(ctx)     # el servidor estático no tiene login; saltarlo
         pg = ctx.new_page()
         errores = []
         pg.on("pageerror", lambda e: errores.append(str(e)))
@@ -655,6 +663,8 @@ def main():
         tmpdb.close()
         bd_orig = servidor.BD
         servidor.BD = servidor.Path(tmpdb.name)
+        pin_orig = servidor.PIN_ADMIN
+        servidor.PIN_ADMIN = "1234"
         try:
             with contextlib.closing(servidor.conectar()) as c:
                 contenido = json.loads(
@@ -662,22 +672,22 @@ def main():
                 # marca reconocible: si aparece, el contenido del servidor se aplicó
                 contenido["pueblo"] = "Cadavedo (servidor)"
                 servidor.publicar_contenido(c, contenido)
-                token = servidor.crear_cuenta(c, "Martina")
-                servidor.fusionar_progreso(c, token, {"abiertas": [todas[0][0]]})
+                # progreso de himilce ya en el servidor, para probar el retomar
+                servidor.fusionar_progreso(c, "himilce", {"abiertas": [todas[0][0]]})
 
             api = servidor.Servidor(("127.0.0.1", 0), servidor.Handler)
             api_port = api.server_address[1]
             threading.Thread(target=api.serve_forever, daemon=True).start()
             api_url = f"http://127.0.0.1:{api_port}/index.html"
 
-            # Contenido dinámico: se cachea en la primera carga y se aplica en la
-            # siguiente (no se reordena el mapa bajo los pies del que juega).
+            # 15a · contenido dinámico (usuario sembrado para saltar el login)
             ctx3 = nav.new_context(
                 viewport={"width": 390, "height": 844}, device_scale_factor=2,
                 is_mobile=True, has_touch=True, permissions=["geolocation"],
                 geolocation={"latitude": origen[0], "longitude": origen[1],
                              "accuracy": 9})
             teselas_falsas(ctx3)
+            sembrar_usuario(ctx3)
             pe = ctx3.new_page()
             err3 = []
             pe.on("pageerror", lambda e: err3.append(str(e)))
@@ -690,8 +700,6 @@ def main():
                       "los spawns del contenido llegan al cliente",
                       str(pe.evaluate("SPAWNS.length")))
 
-            # Y una vez cacheado, sigue sin cobertura: el contenido tampoco
-            # puede depender de la red una vez descargado.
             pe.evaluate("""async () => {
                 if ('serviceWorker' in navigator) await navigator.serviceWorker.ready;
             }""")
@@ -706,38 +714,49 @@ def main():
                 ctx3.set_offline(False)
             ctx3.close()
 
-            # Retomar en otro móvil: un contexto limpio con el mismo token
-            # rehidrata el progreso guardado en el servidor.
+            # 15b · login de verdad + retomar/push por sesión
             ctx4 = nav.new_context(
                 viewport={"width": 390, "height": 844}, device_scale_factor=2,
                 is_mobile=True, has_touch=True, permissions=["geolocation"],
                 geolocation={"latitude": origen[0], "longitude": origen[1],
                              "accuracy": 9})
-            teselas_falsas(ctx4)
+            teselas_falsas(ctx4)   # sin sembrar usuario: queremos el login real
             pf = ctx4.new_page()
             err4 = []
             pf.on("pageerror", lambda e: err4.append(str(e)))
-            pf.goto(f"http://127.0.0.1:{api_port}/index.html?u={token}")
-            pf.wait_for_timeout(1600)
+            pf.goto(api_url); pf.wait_for_timeout(800)
+            comprobar(not pf.is_hidden("#login"),
+                      "sin sesión sale la pantalla de identidad")
+            # Himilce entra con su botón (sin PIN); iniciarSesion recarga la página
+            pf.click('.quien[data-u="himilce"]')
+            pf.wait_for_timeout(2000)
+            me = pf.evaluate("async () => (await (await fetch('api/me')).json()).usuario")
+            comprobar(me == "himilce", "el crío entra con su botón y queda la sesión",
+                      str(me))
+            # Retomar: el progreso de himilce en el servidor se rehidrata solo
+            pf.wait_for_timeout(1000)
             abiertas_srv = pf.evaluate(
                 "JSON.parse(localStorage.getItem('yincana.v1') || '{}').abiertas || []")
             comprobar(abiertas_srv == [todas[0][0]],
-                      "un móvil nuevo con el token retoma el progreso del servidor",
+                      "una sesión nueva retoma el progreso del servidor",
                       str(abiertas_srv))
 
-            # Y el camino de vuelta: lo que abra este móvil sube al servidor.
-            pf.goto(f"http://127.0.0.1:{api_port}/index.html?u={token}&k={todas[1][0]}"
-                    if len(todas) > 1 else
-                    f"http://127.0.0.1:{api_port}/index.html?u={token}")
-            pf.wait_for_timeout(2000)   # deja que el sync (debounce 4 s no, forzado) suba
             if len(todas) > 1:
-                # el push va con debounce de 4 s; esperamos a que salga
-                pf.wait_for_timeout(4000)
+                pf.goto(f"{api_url}?k={todas[1][0]}")
+                pf.wait_for_timeout(5000)   # deja que el sync suba
                 with contextlib.closing(servidor.conectar()) as c:
-                    guardado = servidor.leer_progreso(c, token)["abiertas"]
+                    guardado = servidor.leer_progreso(c, "himilce")["abiertas"]
                 comprobar(todas[1][0] in guardado,
                           "el progreso de este móvil sube al servidor",
                           str(guardado))
+
+            # Admin necesita el PIN correcto
+            code_malo = pf.evaluate("""async () => (await fetch('api/login',{
+                method:'POST', headers:{'Content-Type':'application/json'},
+                body: JSON.stringify({usuario:'admin', pin:'0000'})})).status""")
+            comprobar(code_malo == 403, "admin con PIN incorrecto no entra",
+                      str(code_malo))
+
             comprobar(not err3 and not err4,
                       "el cliente con servidor no suelta errores de JavaScript",
                       "; ".join((err3 + err4)[:2]))
@@ -745,6 +764,7 @@ def main():
             api.shutdown(); api.server_close()
         finally:
             servidor.BD = bd_orig
+            servidor.PIN_ADMIN = pin_orig
             for suf in ("", "-wal", "-shm"):
                 try:
                     os.unlink(tmpdb.name + suf)

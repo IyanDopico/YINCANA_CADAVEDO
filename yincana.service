@@ -15,6 +15,10 @@ After=network.target
 Type=simple
 User=iyan
 WorkingDirectory=/home/iyan/YINCANA_CADAVEDO
+# PIN de admin (4 dígitos): CÁMBIALO. Sin esto, el admin no puede entrar. Los
+# críos entran sin PIN. Nunca metas el PIN en git; va sólo aquí.
+Environment=YINCANA_PIN=1234
+Environment=YINCANA_ORIGEN=https://yincana.iyando.qzz.io
 ExecStart=/usr/bin/python /home/iyan/YINCANA_CADAVEDO/servidor.py --puerto 8000
 Restart=on-failure
 RestartSec=3
