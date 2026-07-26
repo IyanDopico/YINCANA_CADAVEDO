@@ -8,9 +8,11 @@ repetir lo que ya está ahí.
 ## Mensaje para pegar
 
 > Yincana con niebla de guerra para mis primos de 6 y 10 años, en Cadavedo
-> (Valdés, Asturias), en agosto. El código base ya está y las 92 pruebas pasan:
+> (Valdés, Asturias), en agosto. El código base ya está y las 98 pruebas pasan:
 > ejecuta `python pruebas.py` antes de nada para confirmarlo. Abre también
-> `?demo` en el navegador para ver de qué va sin necesidad de GPS.
+> `?demo` en el navegador para ver de qué va sin necesidad de GPS. Hay un
+> servidor opcional (`servidor.py`) con cuentas, respaldo de progreso y
+> contenido dinámico; la yincana funciona igual sin él.
 >
 > Léete `CLAUDE.md` y `LEEME.md`. Lo hecho y lo que queda está abajo en este
 > archivo. De las tareas sólo siguen abiertas la 5 y la 7, y las dos esperan una

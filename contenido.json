@@ -1,0 +1,46 @@
+{
+  "pueblo": "Cadavedo",
+  "radioNiebla": 35,
+  "radioZona": 25,
+  "radioAudio": 150,
+  "perdonarSiPasaronCerca": true,
+  "capitulos": [
+    {
+      "id": "pueblo",
+      "nombre": "El pueblo",
+      "mapa": "mapa-pueblo.jpg",
+      "esquinas": { "norte": 43.550500, "sur": 43.542199, "oeste": -6.392600, "este": -6.385202 },
+      "inicioDemo": [43.5434, -6.3921],
+      "estaciones": [
+        { "k": "a7f3c1", "nombre": "El apeadero", "lat": 43.54295, "lon": -6.39163, "medalla": "🚂",
+          "pista": "Empezamos donde para el tren de vía estrecha. Desde aquí, subid al pueblo: buscad el sitio con más hórreos juntos, esos graneros de madera subidos a cuatro patas. En Cadavedo hay casi cien." },
+        { "k": "b2e9d4", "nombre": "Los hórreos", "lat": 43.54978, "lon": -6.38623, "medalla": "🌽",
+          "pista": "El mapa del pueblo se acaba aquí. Buscad la etiqueta entre los hórreos." }
+      ],
+      "spawns": [
+        { "k": "s_fuente", "nombre": "Fuente", "lat": 43.5462, "lon": -6.3894, "medalla": "⛲",
+          "aviso": "¡Has encontrado la fuente del pueblo!" }
+      ]
+    },
+    {
+      "id": "regalina",
+      "nombre": "La Regalina",
+      "mapa": "mapa-regalina.jpg",
+      "esquinas": { "norte": 43.556400, "sur": 43.552800, "oeste": -6.375501, "este": -6.370501 },
+      "inicioDemo": [43.5535, -6.3748],
+      "traslado": {
+        "icono": "🚶",
+        "titulo": "Queda un mapa más",
+        "texto": "Este ya lo tenéis entero. El último está en La Regalina, al borde del acantilado: hay algo más de un kilómetro. Cuando lleguéis, se abrirá solo.",
+        "boton": "Estamos de camino"
+      },
+      "estaciones": [
+        { "k": "c8a05f", "nombre": "La Regalina", "lat": 43.55459, "lon": -6.37296, "medalla": "⛪",
+          "pista": "Ya estáis en el mapa del final. Buscad la capilla blanca y azul con los dos hórreos al lado." }
+      ],
+      "spawns": []
+    }
+  ],
+  "finalTitulo": "El tesoro es vuestro",
+  "finalTexto": "Habéis cruzado Cadavedo de punta a punta, desde el tren hasta el acantilado. El tesoro está donde el Padre Galo montó la fiesta: mirad debajo del hórreo de la derecha."
+}

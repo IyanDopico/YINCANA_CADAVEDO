@@ -10,9 +10,11 @@ responde como debe. Sirve para validar cambios sin salir de casa.
 Devuelve 0 si pasa todo, 1 si algo falla.
 """
 
-import argparse, functools, http.server, os, socketserver, sys, threading, math, json, re
+import argparse, contextlib, functools, http.server, os, socketserver, sys, tempfile, threading, math, json, re
 from pathlib import Path
 from playwright.sync_api import sync_playwright
+
+import servidor   # el backend: se prueba de punta a punta contra el cliente
 
 RAIZ = Path(__file__).parent.resolve()
 BASE = None          # se fija al arrancar el servidor, con puerto libre
@@ -732,6 +734,110 @@ def main():
         # ── 14 · sin errores por el camino ──────────────────────────────
         print("\nConsola")
         comprobar(not errores, "ningún error de JavaScript", "; ".join(errores[:3]))
+
+        # ── 15 · servidor: contenido dinámico y sincronización ──────────
+        # Con el servidor delante, el contenido puede cambiar sin regrabar
+        # etiquetas y el progreso se retoma en otro móvil. Sin servidor (el
+        # resto de la suite corre contra uno sin /api) se juega con el CONFIG
+        # integrado: esa es la regla que no se toca, y ya la prueban las 92.
+        print("\nServidor")
+        tmpdb = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
+        tmpdb.close()
+        bd_orig = servidor.BD
+        servidor.BD = servidor.Path(tmpdb.name)
+        try:
+            with contextlib.closing(servidor.conectar()) as c:
+                contenido = json.loads(
+                    (RAIZ / "contenido.json").read_text(encoding="utf-8"))
+                # marca reconocible: si aparece, el contenido del servidor se aplicó
+                contenido["pueblo"] = "Cadavedo (servidor)"
+                servidor.publicar_contenido(c, contenido)
+                token = servidor.crear_cuenta(c, "Martina")
+                servidor.fusionar_progreso(c, token, {"abiertas": [todas[0][0]]})
+
+            api = servidor.Servidor(("127.0.0.1", 0), servidor.Handler)
+            api_port = api.server_address[1]
+            threading.Thread(target=api.serve_forever, daemon=True).start()
+            api_url = f"http://127.0.0.1:{api_port}/index.html"
+
+            # Contenido dinámico: se cachea en la primera carga y se aplica en la
+            # siguiente (no se reordena el mapa bajo los pies del que juega).
+            ctx3 = nav.new_context(
+                viewport={"width": 390, "height": 844}, device_scale_factor=2,
+                is_mobile=True, has_touch=True, permissions=["geolocation"],
+                geolocation={"latitude": origen[0], "longitude": origen[1],
+                             "accuracy": 9})
+            pe = ctx3.new_page()
+            err3 = []
+            pe.on("pageerror", lambda e: err3.append(str(e)))
+            pe.goto(api_url); pe.wait_for_timeout(900)   # cachea el contenido
+            pe.goto(api_url); pe.wait_for_timeout(900)   # lo aplica
+            comprobar(pe.inner_text("#nombrePueblo").strip() == "Cadavedo (servidor)",
+                      "el contenido del servidor se aplica en la carga siguiente",
+                      pe.inner_text("#nombrePueblo"))
+            comprobar(pe.evaluate("SPAWNS.length") >= 1,
+                      "los spawns del contenido llegan al cliente",
+                      str(pe.evaluate("SPAWNS.length")))
+
+            # Y una vez cacheado, sigue sin cobertura: el contenido tampoco
+            # puede depender de la red una vez descargado.
+            pe.evaluate("""async () => {
+                if ('serviceWorker' in navigator) await navigator.serviceWorker.ready;
+            }""")
+            pe.wait_for_timeout(800)
+            ctx3.set_offline(True)
+            try:
+                pe.goto(api_url); pe.wait_for_timeout(1000)
+                comprobar(pe.inner_text("#nombrePueblo").strip() == "Cadavedo (servidor)",
+                          "y el contenido cacheado sigue sin cobertura",
+                          pe.inner_text("#nombrePueblo"))
+            finally:
+                ctx3.set_offline(False)
+            ctx3.close()
+
+            # Retomar en otro móvil: un contexto limpio con el mismo token
+            # rehidrata el progreso guardado en el servidor.
+            ctx4 = nav.new_context(
+                viewport={"width": 390, "height": 844}, device_scale_factor=2,
+                is_mobile=True, has_touch=True, permissions=["geolocation"],
+                geolocation={"latitude": origen[0], "longitude": origen[1],
+                             "accuracy": 9})
+            pf = ctx4.new_page()
+            err4 = []
+            pf.on("pageerror", lambda e: err4.append(str(e)))
+            pf.goto(f"http://127.0.0.1:{api_port}/index.html?u={token}")
+            pf.wait_for_timeout(1600)
+            abiertas_srv = pf.evaluate(
+                "JSON.parse(localStorage.getItem('yincana.v1') || '{}').abiertas || []")
+            comprobar(abiertas_srv == [todas[0][0]],
+                      "un móvil nuevo con el token retoma el progreso del servidor",
+                      str(abiertas_srv))
+
+            # Y el camino de vuelta: lo que abra este móvil sube al servidor.
+            pf.goto(f"http://127.0.0.1:{api_port}/index.html?u={token}&k={todas[1][0]}"
+                    if len(todas) > 1 else
+                    f"http://127.0.0.1:{api_port}/index.html?u={token}")
+            pf.wait_for_timeout(2000)   # deja que el sync (debounce 4 s no, forzado) suba
+            if len(todas) > 1:
+                # el push va con debounce de 4 s; esperamos a que salga
+                pf.wait_for_timeout(4000)
+                with contextlib.closing(servidor.conectar()) as c:
+                    guardado = servidor.leer_progreso(c, token)["abiertas"]
+                comprobar(todas[1][0] in guardado,
+                          "el progreso de este móvil sube al servidor",
+                          str(guardado))
+            comprobar(not err3 and not err4,
+                      "el cliente con servidor no suelta errores de JavaScript",
+                      "; ".join((err3 + err4)[:2]))
+            ctx4.close()
+            api.shutdown(); api.server_close()
+        finally:
+            servidor.BD = bd_orig
+            for suf in ("", "-wal", "-shm"):
+                try:
+                    os.unlink(tmpdb.name + suf)
+                except OSError:
+                    pass
 
         nav.close()
     srv.shutdown()

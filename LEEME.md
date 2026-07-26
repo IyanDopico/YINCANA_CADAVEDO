@@ -15,7 +15,11 @@ No hace falta instalar nada en los móviles de tus primos.
 | `mapa.py` | Prepara la imagen de un mapa y calcula sus esquinas exactas. Se ejecuta una vez por capítulo, en tu ordenador. |
 | `sw.js` | Service worker: hace que funcione sin cobertura. |
 | `manifest.json` | Para poder añadirla a la pantalla de inicio. |
+| `servidor.py` | **Opcional.** Backend en esta máquina: cuentas, progreso y contenido dinámico. Sin él la yincana funciona igual. |
+| `contenido.json` | El contenido publicable en el servidor (pistas, puntos, spawns). Se edita y se sube sin regrabar etiquetas. |
+| `Caddyfile` · `yincana.service` | Despliegue del servidor: HTTPS con Caddy y arranque automático con systemd. |
 | `pruebas.py` | Recorre la ruta con un GPS falso y comprueba que todo responde. Ejecútalo tras cada cambio. |
+| `pruebas_servidor.py` | Pruebas del backend (cuentas, contenido, merge de progreso). |
 | `CLAUDE.md` · `ARRANQUE.md` | Contexto y tareas pendientes para seguir en Claude Code. |
 
 ## Verla funcionar ahora mismo
@@ -39,8 +43,13 @@ pip install playwright && playwright install chromium
 python pruebas.py
 ```
 
-Simula el recorrido completo y valida 92 comportamientos. Con `--capturas`
-deja además los pantallazos en `capturas/`.
+Simula el recorrido completo y valida 98 comportamientos (incluidos los del
+servidor). Con `--capturas` deja además los pantallazos en `capturas/`. El
+backend tiene su propia batería, sin navegador ni red:
+
+```bash
+python pruebas_servidor.py
+```
 
 **Ojo con `python3` en Windows:** es el alias de la Microsoft Store y apunta a
 un intérprete vacío. Si sale `No module named 'PIL'` o `'playwright'`, no es que
@@ -171,6 +180,66 @@ Otras direcciones útiles:
   dirección corta, se queda en el historial, y lo que borra es el mapa que
   llevan despejado.
 
+## Servidor (opcional)
+
+La yincana funciona sola, sin backend: es su punto de partida y no cambia. Pero
+esta máquina puede hacer de servidor y añadir dos cosas, **sin que ninguna sea
+imprescindible para jugar**:
+
+- **Cuentas y respaldo del progreso.** Cada jugador tiene un token; su avance se
+  guarda en el servidor y se puede retomar en otro móvil si el suyo muere.
+- **Contenido dinámico.** Las pistas, los puntos y los spawns se sirven desde
+  aquí. Cambiar una pista o añadir un punto **no obliga a regrabar las
+  etiquetas**: siguen apuntando a la misma URL con su `?k=`.
+
+La regla de oro se mantiene: el móvil guarda todo en local y trae del servidor
+lo que haya **cuando hay cobertura**. Sin señal tira de su copia y del `CONFIG`
+integrado. El servidor *actualiza*, no es de lo que se *depende*.
+
+### Arrancarlo
+
+```bash
+python servidor.py                 # juego + API en http://localhost:8000
+```
+
+Con eso solo ya tienes el juego entero servido en un origen (útil para probar).
+En producción va **Caddy** delante para el HTTPS (la geolocalización lo exige):
+edita el dominio en `Caddyfile`, `caddy run --config Caddyfile`, y deja el API
+levantado como servicio con `yincana.service` (instrucciones dentro de cada
+archivo).
+
+### Publicar contenido
+
+Edita `contenido.json` —tiene la misma forma que el `CONFIG`, más un `spawns`
+por capítulo— y súbelo:
+
+```bash
+python servidor.py publicar contenido.json
+```
+
+Los móviles lo recogen la próxima vez que abran la página con cobertura y lo
+aplican en la siguiente carga (no se reordena el mapa bajo los pies de quien
+está jugando). Un `spawn` es un punto extra que aparece en el mapa y se captura
+al pasar cerca, sin etiqueta: `{ "k", "nombre", "lat", "lon", "medalla", "aviso" }`.
+
+### Crear jugadores
+
+```bash
+python servidor.py cuenta "Martina"     # imprime su URL con ?u=<token>
+python servidor.py jugadores            # lista quién va por dónde
+```
+
+Cada crío abre **su** URL una vez; el token se le queda guardado y sobrevive a
+las recargas por etiqueta. Sin `?u=` se juega igual, solo que sin respaldo.
+
+### Cómo llegan los móviles al servidor en el pueblo
+
+Lo pensado para un evento familiar: **se sincroniza en casa** con datos (crear
+jugadores, publicar contenido, cachear todo) y **se juega offline** en el
+pueblo. Si quisieras el servidor accesible desde el campo sin abrir puertos, un
+túnel `cloudflared` por encima de esto lo resuelve; no hace falta para lo de
+ahora.
+
 ## Antes del día
 
 - **Pruébalo caminando la ruta de verdad**, con el móvil que vayan a llevar.
@@ -188,9 +257,11 @@ Otras direcciones útiles:
 
 ## Lo que esta versión no hace
 
-Las coordenadas y las pistas están en el código de la página, así que un crío
-que sepa mirar el código fuente puede verlas todas. Para 6 y 10 años sobra;
-si el de 10 es de los que hurgan, ya lo pensaremos.
+Las coordenadas y las pistas del `CONFIG` integrado están en el código de la
+página, así que un crío que sepa mirar el código fuente puede verlas todas. Para
+6 y 10 años sobra. Si el de 10 es de los que hurgan, sírvelas desde el servidor
+(`contenido.json`): entonces no van en el fuente, sino en una llamada a `/api`
+—no es seguridad de verdad, pero contra un curioso cambia bastante.
 
 ---
 

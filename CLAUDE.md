@@ -12,12 +12,17 @@ explicarle qué es Web Mercator ni qué es el RSSI.
 ## Órdenes
 
 ```bash
-python pruebas.py               # 92 comprobaciones con GPS simulado
+python pruebas.py               # 98 comprobaciones con GPS simulado (incluye servidor)
 python pruebas.py --capturas    # además deja pantallazos en capturas/
 python pruebas.py --ver         # con navegador visible, para depurar
+python pruebas_servidor.py      # pruebas del backend, sin navegador ni red
 python mapa.py --capitulos      # genera los mapas del CONFIG y sus esquinas
 python mapa.py <sur> <oeste> <norte> <este> --salida <archivo>   # uno suelto
-python -m http.server 8000      # servidor local
+python -m http.server 8000      # servidor estático local (solo cliente)
+python servidor.py              # cliente + API (cuentas, progreso, contenido)
+python servidor.py publicar contenido.json   # sube una versión de contenido
+python servidor.py cuenta "Nombre"           # crea un jugador y su URL ?u=
+python servidor.py jugadores                 # lista jugadores y su avance
 ```
 
 **`python`, no `python3`.** En la máquina de Iyán (Windows) `python3` es el
@@ -46,7 +51,13 @@ configurable está en el bloque `CONFIG` de arriba del todo.
 - `manifest.json` — para añadir a pantalla de inicio
 - `mapa.py` — descarga teselas de OSM, las cose, y calcula las esquinas
 - `pruebas.py` — simulador de recorrido
+- `servidor.py` — backend opcional (stdlib + SQLite): cuentas, progreso, contenido
+- `contenido.json` — contenido publicable en el servidor, con la forma del `CONFIG`
+- `Caddyfile`, `yincana.service` — despliegue del servidor (HTTPS + systemd)
+- `pruebas_servidor.py` — pruebas del backend
 - `LEEME.md` — guía de montaje para Iyán
+- `DEMO.md` — cómo probar con servidor y un tag NFC
+- `DESPLIEGUE.md` — despliegue en `iyando.qzzz.io` con Cloudflare Tunnel
 - `mapa-pueblo.jpg`, `mapa-regalina.jpg` — uno por capítulo, generados con
   `mapa.py --capitulos`. Las esquinas del `CONFIG` son las reales del recorte,
   no las que se pidieron: si regeneras un mapa, hay que volver a pegarlas.
@@ -103,9 +114,25 @@ estado nuevo tiene que persistir o se pierde en la primera etiqueta.
 
 **Tiene que funcionar sin cobertura.** En el pueblo puede no haber datos. El
 GPS no los necesita (GNSS solo recibe) pero la web sí, de ahí el service
-worker. Nada de CDN, fuentes remotas ni llamadas a API en tiempo de ejecución.
+worker. Nada de CDN ni fuentes remotas. Las llamadas al servidor propio
+(`/api/*`) están permitidas **sólo como mejor-esfuerzo**: nunca bloquean el
+arranque ni el juego, y siempre hay copia local o `CONFIG` integrado detrás. Si
+una llamada nueva puede dejar la página esperando a la red, está mal.
 `pruebas.py` corta la red de verdad y comprueba que la página carga y que la
 etiqueta sigue desbloqueando: si tocas `sw.js`, esa es la que avisa.
+
+**El servidor es opcional y mejor-esfuerzo.** `servidor.py` (stdlib + SQLite)
+añade cuentas, respaldo de progreso y contenido dinámico, pero la yincana
+funciona igual sin él. El cliente resuelve el contenido **síncrono** al arrancar
+(caché local → `CONFIG` integrado) y refresca la caché en segundo plano para la
+**siguiente** carga: nunca reordena el mapa bajo los pies de quien juega. El
+progreso se sube con debounce y el `merge` del servidor no es destructivo (une
+`abiertas`/`capturas`, conserva el rastro más largo). Identidad opcional por
+`?u=<token>`, que se persiste en `localStorage` para sobrevivir a la recarga por
+etiqueta. `?modo=autor` y `?demo` ignoran el servidor a propósito: el autor
+captura las coordenadas del `CONFIG` integrado y la demo tiene que ser
+determinista. El estado ganó un campo `capturas` (spawns recogidos); pasa por
+`sanear()` como el resto.
 
 **El público son un niño de 6 y otro de 10.** El de 6 se guía por el frío/
 caliente y el sonido, no lee. Nada esencial puede depender de leer texto: por eso
@@ -161,6 +188,12 @@ cierran la medalla y aparece un mapa desconocido sin explicación.
 
 **Sube `VERSION` en `sw.js` al editar `index.html`.** Si no, los móviles siguen
 sirviendo la copia vieja y te vuelves loco.
+
+**Detrás de Cloudflare, el `sw.js` no se puede cachear en el edge.** Es la misma
+trampa un nivel más arriba: aunque subas `VERSION`, si Cloudflare tiene cacheado
+el `.js` sirve el service worker viejo. Por eso `servidor.py` manda
+`Cache-Control: no-cache` en `sw.js`/`.html` y `no-store` en `/api`. Ver
+`DESPLIEGUE.md` para los ajustes del panel (Rocket Loader off, etc.).
 
 **En iOS no existe `navigator.vibrate`.** Nunca ha existido. El aviso tiene que
 funcionar solo con sonido y con lo que se ve.

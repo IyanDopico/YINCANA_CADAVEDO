@@ -266,6 +266,20 @@ body.autor #niebla{display:none}
 }
 #demoBarra button:active, #finBarra button:active{background:var(--tinta)}
 #finBarra button.activo{border-color:var(--caliente); color:var(--caliente)}
+
+/* Aviso breve al capturar un spawn. No bloquea: no tapa el mapa ni la pista,
+   se asoma y se va. El de 6 ya se entera por el sonido; esto es para el de 10. */
+#toast{
+  position:fixed; left:50%; z-index:70;
+  bottom:calc(env(safe-area-inset-bottom) + 200px);
+  transform:translateX(-50%) translateY(16px);
+  max-width:80vw; padding:11px 18px; border-radius:999px;
+  background:rgba(13,21,29,.94); border:1px solid var(--oro);
+  color:var(--hueso); font-family:var(--sans); font-size:14px; text-align:center;
+  box-shadow:0 6px 24px -8px rgba(0,0,0,.6);
+  opacity:0; pointer-events:none; transition:opacity .3s, transform .3s;
+}
+#toast.visible{opacity:1; transform:translateX(-50%) translateY(0)}
 @media (prefers-reduced-motion:reduce){
   *{animation-duration:.01ms !important; transition-duration:.01ms !important}
 }
@@ -431,18 +445,138 @@ const CONFIG = {
   finalTexto:  "Habéis cruzado Cadavedo de punta a punta, desde el tren hasta el acantilado. El tesoro está donde el Padre Galo montó la fiesta: mirad debajo del hórreo de la derecha.",
 };
 
-/* Atajos: la lista de estaciones en orden de juego y a qué capítulo va cada
-   una. El resto del código no debería tener que saber de capítulos. */
-const CAPS   = CONFIG.capitulos;
-const TODAS  = CAPS.flatMap(c => c.estaciones);
-const CAP_DE = new Map(CAPS.flatMap(c => c.estaciones.map(e => [e.k, c])));
-
-/* ══════════════════════════════════════════════════════════════
-   2 · ESTADO PERSISTENTE
-   ══════════════════════════════════════════════════════════════ */
 const params  = new URLSearchParams(location.search);
 const esAutor = params.get("modo") === "autor";
 const esDemo  = params.has("demo");
+
+/* ══════════════════════════════════════════════════════════════
+   1b · CONTENIDO DINÁMICO
+   El CONFIG de arriba es la copia integrada: la que vale sin cobertura y la
+   única que usan la demo (para ser determinista) y el modo autor (que captura
+   las coordenadas de ESTE CONFIG). Cuando hay servidor, se trae de él una
+   versión que puede cambiar pistas, mover puntos o añadir spawns sin regrabar
+   etiquetas ni tocar este archivo.
+
+   Al arrancar se resuelve síncrono: caché local → CONFIG integrado. En segundo
+   plano se refresca la caché para la próxima carga (refrescarContenido). Nunca
+   se depende de la red para jugar: por eso no se reaplica en caliente, se deja
+   para la siguiente apertura, y las etiquetas recargan la página a cada rato.
+   ══════════════════════════════════════════════════════════════ */
+const CLAVE_CONTENIDO = "yincana.contenido";
+
+/* Atajos: la lista de estaciones en orden de juego, a qué capítulo va cada una
+   y los spawns sueltos. Son `let` porque el contenido servido los recalcula. */
+let CAPS, TODAS, CAP_DE, SPAWNS;
+function derivar(){
+  CAPS   = CONFIG.capitulos;
+  TODAS  = CAPS.flatMap(c => c.estaciones);
+  CAP_DE = new Map(CAPS.flatMap(c => c.estaciones.map(e => [e.k, c])));
+  // Cada spawn recuerda su capítulo: sólo se ven y se capturan en su mapa.
+  SPAWNS = CAPS.flatMap(c => (c.spawns || []).map(s => ({ ...s, cap:c })));
+}
+
+/* Un contenido servido puede venir a medias o de una versión que no encaja. Si
+   le falta lo mínimo se descarta entero: más vale la copia integrada que un
+   mapa roto en mitad del monte. Es la misma aduana que sanear() para el estado. */
+function contenidoValido(c){
+  return !!c && typeof c === "object" &&
+    Array.isArray(c.capitulos) && c.capitulos.length > 0 &&
+    c.capitulos.every(cap => cap && typeof cap === "object" &&
+      cap.esquinas && Array.isArray(cap.estaciones));
+}
+
+/* Vuelca el contenido sobre el CONFIG (mutándolo, que el resto del código lee
+   de CONFIG) y recalcula los atajos. */
+function aplicarContenido(c){
+  for (const k of ["pueblo","radioNiebla","radioZona","radioAudio",
+                   "perdonarSiPasaronCerca","capitulos","finalTitulo","finalTexto"])
+    if (k in c) CONFIG[k] = c[k];
+  derivar();
+}
+
+derivar();   // arranca con la copia integrada
+if (!esDemo && !esAutor){
+  try{
+    const c = JSON.parse(localStorage.getItem(CLAVE_CONTENIDO) || "null");
+    if (contenidoValido(c)) aplicarContenido(c);
+  }catch(_){}
+}
+
+/* Trae la última versión del servidor y la guarda para la PRÓXIMA carga. No la
+   aplica en caliente a propósito: reordenar estaciones bajo los pies del que
+   está jugando es peor que esperar a la siguiente apertura. Mejor-esfuerzo:
+   sin servidor o sin red, no pasa nada. */
+async function refrescarContenido(){
+  if (esDemo || esAutor) return;
+  try{
+    const r = await fetch("api/contenido", { cache:"no-store" });
+    if (!r.ok) return;
+    const c = await r.json();
+    if (contenidoValido(c))
+      localStorage.setItem(CLAVE_CONTENIDO, JSON.stringify(c));
+  }catch(_){}
+}
+
+/* ══════════════════════════════════════════════════════════════
+   1c · IDENTIDAD Y SINCRONIZACIÓN (opcional)
+   Sin token se juega igual que siempre, todo en local. Con ?u=<token> el
+   progreso se respalda en el servidor y se puede retomar en otro móvil. Todo
+   mejor-esfuerzo: nada de esto bloquea el juego sin cobertura.
+   ══════════════════════════════════════════════════════════════ */
+const CLAVE_JUGADOR = "yincana.jugador";
+let token = null;
+if (!esDemo && !esAutor){
+  try{
+    token = params.get("u") || localStorage.getItem(CLAVE_JUGADOR) || null;
+    // Una etiqueta recarga con ?k= y sin ?u=, así que el token tiene que
+    // sobrevivir en localStorage o se pierde en el primer toque.
+    if (token) localStorage.setItem(CLAVE_JUGADOR, token);
+  }catch(_){}
+}
+
+let syncEnCurso = false, syncPendiente = false, syncTimer = null;
+function sincronizar(){
+  if (!token || esDemo || esAutor) return;
+  if (!navigator.onLine || syncEnCurso){ syncPendiente = true; return; }
+  syncEnCurso = true; syncPendiente = false;
+  fetch("api/progreso?u=" + encodeURIComponent(token), {
+    method:"POST", headers:{ "Content-Type":"application/json" },
+    body: JSON.stringify({ abiertas:estado.abiertas, capturas:estado.capturas,
+                           rastro:estado.rastro }),
+    keepalive:true,
+  }).catch(() => { syncPendiente = true; })
+    .finally(() => {
+      syncEnCurso = false;
+      if (syncPendiente) setTimeout(sincronizar, 1500);
+    });
+}
+/* guardar() se llama a cada pisada: se agrupa para no soltar un POST por cada
+   diez metros caminados. */
+function programarSync(){
+  if (!token || esDemo || esAutor) return;
+  clearTimeout(syncTimer);
+  syncTimer = setTimeout(sincronizar, 4000);
+}
+window.addEventListener("online", sincronizar);
+
+/* Retomar en otro móvil: si este aún no tiene partida y el token tiene progreso
+   guardado en el servidor, lo rehidrata. Sólo mientras siga sin empezar, para
+   no pisar lo que hagan mientras carga. Mejor-esfuerzo. */
+async function traerProgreso(){
+  if (!token || esDemo || esAutor) return;
+  if (estado.abiertas.length || estado.rastro.length || estado.capturas.length) return;
+  try{
+    const r = await fetch("api/progreso?u=" + encodeURIComponent(token), { cache:"no-store" });
+    if (!r.ok) return;
+    const p = sanear(await r.json());
+    if (siguiendo || estado.abiertas.length || estado.rastro.length || estado.capturas.length) return;
+    if (!p.abiertas.length && !p.rastro.length && !p.capturas.length) return;
+    estado = p; guardar(estado);
+    aplicarCapitulo(capituloActivo());
+    pintarNiebla(); pintarMedallero(); mostrarPista();
+    if (!estacionActiva() && document.getElementById("capaLogro").hidden) montarBarraFinal();
+  }catch(_){}
+}
 
 // La demo guarda aparte para no pisar la partida de verdad.
 const CLAVE = esDemo ? "yincana.demo" : "yincana.v1";
@@ -453,7 +587,7 @@ let mem = null; // respaldo si localStorage está bloqueado (previsualizaciones,
    queda en blanco al primer repintado, y ahí ya no hay yincana que salvar:
    más vale perder una pisada rara que la partida entera. */
 function sanear(e){
-  const bueno = { rastro:[], abiertas:[] };
+  const bueno = { rastro:[], abiertas:[], capturas:[] };
   if (!e || typeof e !== "object") return bueno;
   if (Array.isArray(e.rastro))
     bueno.rastro = e.rastro.filter(p => Array.isArray(p) && p.length >= 2 &&
@@ -462,6 +596,9 @@ function sanear(e){
   // salen claves nuevas. Sin esto el móvil se cree la yincana terminada.
   if (Array.isArray(e.abiertas))
     bueno.abiertas = e.abiertas.filter(k => TODAS.some(x => x.k === k));
+  // Igual con los spawns: los que ya no están en el contenido se descartan.
+  if (Array.isArray(e.capturas))
+    bueno.capturas = e.capturas.filter(k => SPAWNS.some(s => s.k === k));
   return bueno;
 }
 
@@ -469,20 +606,21 @@ function leer(){
   try{
     const s = localStorage.getItem(CLAVE);
     return sanear(s ? JSON.parse(s) : null);
-  }catch(e){ return mem || { rastro:[], abiertas:[] }; }
+  }catch(e){ return mem || { rastro:[], abiertas:[], capturas:[] }; }
 }
 function guardar(e){
   mem = e;
   try{ localStorage.setItem(CLAVE, JSON.stringify(e)); }catch(_){}
+  programarSync();   // respaldo mejor-esfuerzo si hay token y red
 }
 
-let estado = esDemo ? { rastro:[], abiertas:[] } : leer();  // la demo siempre empieza limpia
+let estado = esDemo ? { rastro:[], abiertas:[], capturas:[] } : leer();  // la demo siempre empieza limpia
 if (params.has("reset")){
   // La niebla despejada es lo único que se llevan de recuerdo y ?reset es una
   // dirección corta que se queda en el historial: que no la borre un despiste.
   if (esDemo || confirm("¿Borrar la partida y empezar de cero?\n\n" +
                         "Se pierde todo el mapa que lleváis despejado.")){
-    estado = { rastro:[], abiertas:[] };
+    estado = { rastro:[], abiertas:[], capturas:[] };
     guardar(estado);
   }
   history.replaceState(null,"",location.pathname);
@@ -691,6 +829,8 @@ function alRecibirPosicion(p){
     } else dentroSeguidas = 0;
   } else distActual = null;
 
+  comprobarSpawns();
+
   repintar = true;
   refrescarInstrumento();
 }
@@ -759,6 +899,54 @@ function entrarEnZona(){
     "La etiqueta está a menos de " + CONFIG.radioZona + " metros. Buscadla y acercadle el móvil.";
 }
 
+/* ── Spawns: puntos extra que se recogen al pasar cerca ───────────────
+   La capa tipo Pokémon Go. Los pone el servidor en el contenido, aparecen
+   sobre el mapa y se capturan sin etiqueta, sólo con acercarse. No forman parte
+   de la ruta: capturarlos no cambia la pista ni el capítulo. Con el CONFIG
+   integrado (sin spawns) todo esto es un no-op y no cambia nada. */
+const spawnSeguidas = {};
+function spawnsActivos(){
+  const cap = capituloActivo();
+  return SPAWNS.filter(s => s.cap === cap && !estado.capturas.includes(s.k));
+}
+function comprobarSpawns(){
+  if (!pos || !SPAWNS.length) return;
+  for (const s of spawnsActivos()){
+    const d = distancia(pos.lat, pos.lon, s.lat, s.lon);
+    // Mismo criterio que las estaciones: dos lecturas seguidas dentro del radio
+    // para que un pico del GPS no lo dispare en falso.
+    if (d <= CONFIG.radioZona){
+      spawnSeguidas[s.k] = (spawnSeguidas[s.k] || 0) + 1;
+      if (spawnSeguidas[s.k] === 2) capturarSpawn(s);
+    } else spawnSeguidas[s.k] = 0;
+  }
+}
+function capturarSpawn(s){
+  if (estado.capturas.includes(s.k)) return;
+  estado.capturas.push(s.k);
+  guardar(estado);
+  repintar = true;
+  // Aviso que no depende de leer, como el de estar encima: suena y vibra.
+  abrirAudio();
+  [0,90,180].forEach((t,i) => setTimeout(() => pitido([700,1000,1300][i], 120, .22), t));
+  vibrar([60,50,120]);
+  mostrarToast((s.medalla || "⭐") + "  " + (s.aviso || "¡" + (s.nombre || "Punto") + "!"));
+}
+
+let toastTimer = null;
+function mostrarToast(txt){
+  let el = document.getElementById("toast");
+  if (!el){
+    el = document.createElement("div");
+    el.id = "toast";
+    document.body.appendChild(el);
+  }
+  el.textContent = txt;
+  el.classList.add("visible");
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove("visible"), 2600);
+}
+
 /* ══════════════════════════════════════════════════════════════
    7 · DIBUJO EN VIVO (marcador + sónar + rastro)
    ══════════════════════════════════════════════════════════════ */
@@ -796,6 +984,21 @@ function fotograma(t){
     gH.strokeStyle = "rgba(200,149,47,.28)";
     gH.lineWidth = 1.5; gH.lineJoin = "round"; gH.lineCap = "round";
     gH.stroke();
+  }
+
+  // spawns del capítulo, en oro con su icono: puntos extra por recoger
+  for (const s of spawnsActivos()){
+    if (!dentroDelMapa(s.lat, s.lon)) continue;
+    const [sx,sy] = aPixel(s.lat, s.lon);
+    gH.beginPath(); gH.arc(sx, sy, 6, 0, 7);
+    gH.fillStyle = "rgba(200,149,47,.92)"; gH.fill();
+    gH.strokeStyle = "#0d151d"; gH.lineWidth = 2; gH.stroke();
+    if (s.medalla){
+      gH.font = "15px system-ui, sans-serif";
+      gH.textAlign = "center"; gH.textBaseline = "middle";
+      gH.fillText(s.medalla, sx, sy - 13);
+      gH.textAlign = "start"; gH.textBaseline = "alphabetic";
+    }
   }
 
   // Fuera del recuadro el marcador se pega al borde por el que se han salido,
@@ -1442,7 +1645,7 @@ function montarDemo(){
     e.target.textContent = "x" + demoVelocidad;
   };
   document.getElementById("demoOtra").onclick = () => {
-    estado = { rastro:[], abiertas:[] }; guardar(estado);
+    estado = { rastro:[], abiertas:[], capturas:[] }; guardar(estado);
     demoTramo = 0; demoT = 0; demoPausa = 0; pos = null;
     yaAvisado = false; dentroSeguidas = 0;
     document.getElementById("capaLogro").hidden = true;
@@ -1524,13 +1727,21 @@ if (!esAutor){
   pintarMedallero();
   mostrarPista();
   comprobarEtiqueta();
+  // Con servidor: refresca el contenido para la próxima carga, respalda el
+  // progreso y, en un móvil nuevo con el mismo token, lo retoma. Todo
+  // mejor-esfuerzo; sin red no pasa nada.
+  if (!esDemo){
+    refrescarContenido();
+    traerProgreso();
+    sincronizar();
+  }
   // Si vuelven a abrir la página con la yincana ya terminada, que puedan
   // repasar los dos mapas en vez de encontrarse el juego mudo.
   if (!estacionActiva() && document.getElementById("capaLogro").hidden)
     montarBarraFinal();
   // Tocar una etiqueta recarga la página. Si ya habían empezado, retomamos
   // solos en vez de hacerles pulsar "Empezar" otra vez.
-  if (!esDemo && (estado.rastro.length || estado.abiertas.length)){
+  if (!esDemo && (estado.rastro.length || estado.abiertas.length || estado.capturas.length)){
     document.body.addEventListener("pointerdown", abrirAudio, { once:true });
     if (document.getElementById("capaLogro").hidden) arrancarSeguimiento();
   }
