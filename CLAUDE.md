@@ -9,6 +9,16 @@ Lo lleva Iyán, ingeniero de telecos. Habla en español, directo, sin florituras
 Prefiere ver opciones comparadas antes de meterse en detalle. No hace falta
 explicarle qué es Web Mercator ni qué es el RSSI.
 
+> **v2 en curso (versión útil, no demo).** En el pueblo **sí hay cobertura en
+> todos los rincones**, así que el juego deja de ser offline-first y pasa a:
+> **mapa vivo real** (teselas servidas y cacheadas por la propia máquina) con la
+> niebla de guerra por encima; **login persistente con cookie de sesión** para
+> tres usuarios (admin=Iyán con PIN, Himilce 10, Orián 6, los críos sin
+> contraseña); y **provisión de etiquetas en el campo**: el admin coloca una
+> etiqueta, la escanea y se guarda su posición GPS como ubicación de esa
+> estación, en el servidor. Las secciones de abajo describen el diseño v1
+> (imagen estática + offline) y se irán actualizando según aterriza la v2.
+
 ## Órdenes
 
 ```bash
@@ -112,14 +122,16 @@ el estado va a `localStorage` bajo `yincana.v1`, y `arrancarSeguimiento()` es
 idempotente para retomar sin volver a pedir el botón de inicio. Cualquier
 estado nuevo tiene que persistir o se pierde en la primera etiqueta.
 
-**Tiene que funcionar sin cobertura.** En el pueblo puede no haber datos. El
-GPS no los necesita (GNSS solo recibe) pero la web sí, de ahí el service
-worker. Nada de CDN ni fuentes remotas. Las llamadas al servidor propio
-(`/api/*`) están permitidas **sólo como mejor-esfuerzo**: nunca bloquean el
-arranque ni el juego, y siempre hay copia local o `CONFIG` integrado detrás. Si
-una llamada nueva puede dejar la página esperando a la red, está mal.
-`pruebas.py` corta la red de verdad y comprueba que la página carga y que la
-etiqueta sigue desbloqueando: si tocas `sw.js`, esa es la que avisa.
+**~~Tiene que funcionar sin cobertura.~~ (v1) → En el pueblo sí hay cobertura
+(v2).** Esta era la restricción madre de la v1: sin datos, de ahí el mapa como
+imagen pre-generada, la retícula de respaldo y el service worker cacheándolo
+todo. **Ya no aplica**: hay cobertura en todo el pueblo, así que la v2 depende
+de la conexión (mapa vivo con teselas, servidor en tiempo real). Lo que sí se
+conserva por barato: nada de **CDN ni fuentes remotas de terceros** en tiempo de
+ejecución —las teselas y todo lo demás salen de la propia máquina—, y el service
+worker se mantiene como red de seguridad (que un bache momentáneo no tire la
+página), no como requisito. `pruebas.py` sigue cortando la red para comprobar
+que un corte puntual no rompe nada.
 
 **El servidor es opcional y mejor-esfuerzo.** `servidor.py` (stdlib + SQLite)
 añade cuentas, respaldo de progreso y contenido dinámico, pero la yincana
