@@ -8,7 +8,7 @@ repetir lo que ya está ahí.
 ## Mensaje para pegar
 
 > Yincana con niebla de guerra para mis primos de 6 y 10 años, en Cadavedo
-> (Valdés, Asturias), en agosto. El código base ya está y las 68 pruebas pasan:
+> (Valdés, Asturias), en agosto. El código base ya está y las 69 pruebas pasan:
 > ejecuta `python3 pruebas.py` antes de nada para confirmarlo. Abre también
 > `?demo` en el navegador para ver de qué va sin necesidad de GPS.
 >
@@ -24,7 +24,7 @@ repetir lo que ya está ahí.
 Funciona de punta a punta con GPS simulado: niebla, frío/caliente, sónar,
 desbloqueo por etiqueta, medallas, capítulos, modo autor, demo, persistencia
 entre recargas, etiqueta repetida, etiqueta adelantada, clave inventada y
-pantalla de cierre. Las 68 comprobaciones de `pruebas.py` pasan.
+pantalla de cierre. Las 69 comprobaciones de `pruebas.py` pasan.
 
 Sin probar en la calle. Sin las imágenes de los mapas. Sin desplegar. Y las
 coordenadas de las estaciones son de OpenStreetMap, no de campo: sirven para la
@@ -85,9 +85,30 @@ frío/caliente, sin texto, y `?quien=mayor` con las pistas y el mapa. Que ningun
 avance solo. Dime si merece la pena o si complica más de lo que aporta.
 
 ### 5 · Batería
-El GPS de alta precisión en continuo se come el móvil en dos o tres horas y son
-tres días de juego. Mira si se puede bajar el ritmo cuando están lejos de la
-estación y subirlo al acercarse. Mide antes de optimizar.
+**Hecho la mitad.** El HUD ya no se repinta en cada fotograma: lejos de la
+estación no hay anillos girando y el dibujo es idéntico, así que sólo se repinta
+al llegar posición nueva. Medido: 5 repintados en 2 s en vez de los ~120 de un
+bucle a 60 fps. Hay una comprobación que lo vigila. Lo mismo en modo autor, que
+es donde te vas a pasar media hora quieto esperando precisión.
+
+**Falta la parte del GPS, y ahí hay que medir de verdad.** La API no tiene mando
+de frecuencia: el único interruptor es `enableHighAccuracy`, y cambiarlo obliga
+a `clearWatch` y volver a arrancar. El problema es que en modo impreciso las
+lecturas se van a ±100–500 m y la niebla se abriría en el sitio equivocado —y la
+niebla no se puede deshacer, que es justo lo que se llevan de recuerdo. Cambiar
+el mapa por batería es mal trato.
+
+Cómo medirlo, con el móvil que vayan a llevar y el brillo al que se vaya a jugar:
+
+1. Media hora andando con la app tal cual. Apunta el porcentaje.
+2. Otra media hora con `enableHighAccuracy:false` en las dos llamadas a
+   `watchPosition`. Apunta.
+
+Si la diferencia baja de un 10 % por hora, no compensa el riesgo: lo que se está
+comiendo la batería es la pantalla encendida, y ahí no hay nada que tocar sin
+cargarse el juego. Si es mucho mayor, entonces sí merece montar el cambio
+automático, y con él un umbral de precisión por debajo del cual no se guarda
+pisada, para que el mapa no se ensucie.
 
 ### 7 · Pistas dentro de la etiqueta
 Las coordenadas y las pistas están en el código de la página. El de 10 podría

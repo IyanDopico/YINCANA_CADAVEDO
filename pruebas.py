@@ -189,7 +189,25 @@ def main():
         pg.wait_for_timeout(500)
         comprobar(pg.is_hidden("#capaInicio"), "el botón oculta la pantalla de inicio")
 
-        # ── 2 · caminar hacia la primera estación ───────────────────────
+        # ── 2 · lo que cuesta estar quieto ──────────────────────────────
+        # Tres días con la pantalla encendida: lejos de la estación no hay nada
+        # animado y el HUD no debería repintarse en cada fotograma. Se cuentan
+        # los clearRect parcheando el contexto desde aquí, sin tocar la página.
+        print("\nGasto en reposo")
+        pg.evaluate("""() => {
+            const g = document.getElementById('hud').getContext('2d');
+            const orig = g.clearRect.bind(g);
+            window.__n = 0;
+            g.clearRect = (...a) => { window.__n++; return orig(...a); };
+        }""")
+        pg.evaluate("distActual = CONFIG.radioAudio * 10")   # como si estuvieran lejos
+        pg.wait_for_timeout(2000)
+        repintes = pg.evaluate("window.__n")
+        comprobar(repintes <= 5,
+                  "lejos de la estación el HUD no repinta en cada fotograma",
+                  f"{repintes} repintes en 2 s")
+
+        # ── 3 · caminar hacia la primera estación ───────────────────────
         print("\nRecorrido")
         caminar(ctx, pg, origen, (primera[1], primera[2]))
         captura("2-en-zona")

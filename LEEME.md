@@ -37,7 +37,7 @@ pip install playwright && playwright install chromium
 python3 pruebas.py
 ```
 
-Simula el recorrido completo y valida 68 comportamientos. Con `--capturas`
+Simula el recorrido completo y valida 69 comportamientos. Con `--capturas`
 deja además los pantallazos en `capturas/`.
 
 ## Puesta en marcha

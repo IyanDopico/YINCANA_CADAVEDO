@@ -515,6 +515,7 @@ function dimensionar(){
   const altoM  = distancia(E.norte, E.oeste, E.sur,   E.oeste);
   mPorPx = ((anchoM/recto.w) + (altoM/recto.h)) / 2;
 
+  repintar = true;
   pintarNiebla();
 }
 
@@ -628,6 +629,7 @@ function alRecibirPosicion(p){
     } else dentroSeguidas = 0;
   } else distActual = null;
 
+  repintar = true;
   refrescarInstrumento();
 }
 
@@ -700,12 +702,22 @@ function entrarEnZona(){
    ══════════════════════════════════════════════════════════════ */
 let quietud = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
+let repintar = true;   // hay algo nuevo que dibujar en el HUD
+
 function fotograma(t){
   requestAnimationFrame(fotograma);
-  gH.clearRect(0,0,W,H);
   if (!pos) return;
 
-  latido(t);
+  latido(t);   // el sónar suena aunque no se repinte
+
+  /* Lejos de la estación no hay anillos girando: el HUD dibuja exactamente lo
+     mismo fotograma tras fotograma. Repintarlo sesenta veces por segundo son
+     tres días de pantalla encendida tirando de batería para nada. */
+  const animando = !quietud && distActual != null && distActual < CONFIG.radioAudio;
+  if (!animando && !repintar) return;
+  repintar = false;
+
+  gH.clearRect(0,0,W,H);
 
   // rastro caminado, en oro tenue: el mapa que estáis levantando
   if (estado.rastro.length > 1){
@@ -1049,6 +1061,7 @@ function refrescarAutor(precReal){
   el.className = precReal <= 10 ? "bien" : precReal <= 20 ? "regular" : "mal";
   const n = document.getElementById("aN");
   n.textContent = (+n.textContent) + 1;
+  repintar = true;
 
   // En cuanto hay señal, saltar al mapa del sitio donde estás. Si sales a
   // marcar a La Regalina, que no te salga el mapa del pueblo.
@@ -1077,6 +1090,10 @@ function pintarCapitulos(){
    que es lo que van a tener que barrer buscando la etiqueta. */
 function fotogramaAutor(){
   requestAnimationFrame(fotogramaAutor);
+  // Aquí no hay nada animado: sólo cambia al llegar posición, al marcar un
+  // punto o al cambiar de mapa. Marcar puntos es estar quieto un buen rato.
+  if (!repintar) return;
+  repintar = false;
   gH.clearRect(0,0,W,H);
 
   // las estaciones que ya están en el CONFIG, en hueco, para comparar
@@ -1124,6 +1141,7 @@ function claveAzar(){
    toca, y con los que no caen en ningún recuadro apartados y en mayúsculas:
    ese es justo el fallo que no quieres descubrir en el pueblo. */
 function pintarSalida(){
+  repintar = true;
   const s = document.getElementById("aSalida");
   const alerta = document.getElementById("aAlerta");
 
