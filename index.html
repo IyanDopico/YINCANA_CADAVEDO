@@ -94,8 +94,10 @@ header{
 }
 /* El mapa vivo (Leaflet) ocupa todo el contenedor. */
 #mapa{ position:absolute; inset:0; background:transparent; }
-/* El HUD (marcador + sónar) va por encima del mapa y de los marcadores de
-   Leaflet, sin capturar toques. */
+/* La niebla, a pantalla completa, por encima del mapa y de los marcadores/rastro
+   de Leaflet (que sólo se ven por los agujeros ya despejados). Sin capturar toques. */
+#niebla{ position:absolute; inset:0; width:100%; height:100%; pointer-events:none; z-index:650; }
+/* El HUD (marcador + sónar) por encima de todo. */
 #hud{ position:absolute; inset:0; width:100%; height:100%; pointer-events:none; z-index:690; }
 /* La niebla es una capa de Leaflet en su propio panel, entre teselas y marcadores. */
 .leaflet-niebla-pane{ z-index:350; pointer-events:none; }
@@ -340,6 +342,7 @@ body.autor #niebla{display:none}
 
 <div id="lienzos">
   <div id="mapa"></div>
+  <canvas id="niebla"></canvas>
   <canvas id="hud"></canvas>
 </div>
 
@@ -913,8 +916,6 @@ const map = L.map("mapa", {
   zoomControl: false, attributionControl: true,
   zoomSnap: 0, tap: false,
 });
-map.createPane("niebla");
-map.getPane("niebla").classList.add("leaflet-niebla-pane");
 L.tileLayer("tiles/{z}/{x}/{y}.png", {
   minZoom: 13, maxZoom: 18,
   attribution: "© colaboradores de OpenStreetMap",
@@ -927,85 +928,73 @@ function aPixel(lat, lon){
   return [p.x, p.y];
 }
 
-/* La niebla: un canvas de resolución fija (a un zoom de referencia ZREF)
-   anclado a un rectángulo geográfico. Se extiende L.ImageOverlay, que ya sabe
-   colocar y escalar el canvas y animar el zoom sin saltos. Se pica un agujero
-   por pisada; nunca se repinta al mover ni al hacer zoom. */
-let ZREF = 18;
-function elegirZref(bounds){
-  // El mayor zoom cuyo mask quepa en ~2048 px de lado (tope de RAM del canvas).
-  for (let z = 19; z >= 13; z--){
-    const nw = map.project(bounds.getNorthWest(), z);
-    const se = map.project(bounds.getSouthEast(), z);
-    if (Math.abs(se.x - nw.x) <= 2048 && Math.abs(se.y - nw.y) <= 2048) return z;
+/* La niebla es un lienzo a pantalla completa POR ENCIMA del mapa: cubre siempre
+   lo que se ve y se le abren agujeros por donde has pasado (el rastro, proyectado
+   a píxeles con Leaflet). Así te sigue estés donde estés —Cadavedo, Gijón, donde
+   sea— y se abre según caminas, sin zona fija. Se repinta al moverte; el base
+   (degradado + grano) se pre-renderiza una vez por tamaño. */
+const cNiebla = document.getElementById("niebla");
+const gN = cNiebla.getContext("2d");
+const baseNiebla = document.createElement("canvas");
+let nieblaListo = false;
+
+function pintarBaseNiebla(){
+  const w = Math.max(1, Math.round(W*dpr)), h = Math.max(1, Math.round(H*dpr));
+  baseNiebla.width = w; baseNiebla.height = h;
+  const g = baseNiebla.getContext("2d");
+  const grad = g.createLinearGradient(0, 0, 0, h);
+  grad.addColorStop(0, "#1e2b39"); grad.addColorStop(.55, "#16212e"); grad.addColorStop(1, "#0f1822");
+  g.fillStyle = grad; g.fillRect(0, 0, w, h);
+  // grano determinista (se lee como territorio, no como error), una vez por tamaño
+  g.globalAlpha = .05;
+  let s = 20250725;
+  const azar = () => (s = (s*1103515245 + 12345) & 0x7fffffff) / 0x7fffffff;
+  for (let i = 0; i < 140; i++){
+    const x = azar()*w, y = azar()*h, r = (22 + azar()*70) * dpr;
+    const b = g.createRadialGradient(x, y, 0, x, y, r);
+    b.addColorStop(0, azar() > .5 ? "#4a5f75" : "#060b12");
+    b.addColorStop(1, "transparent");
+    g.fillStyle = b; g.beginPath(); g.arc(x, y, r, 0, 7); g.fill();
   }
-  return 13;
+  g.globalAlpha = 1;
 }
 
-const NieblaOverlay = L.ImageOverlay.extend({
-  initialize(bounds, zref, opciones){
-    this._bounds = L.latLngBounds(bounds);
-    this._zref = zref;
-    L.Util.setOptions(this, opciones);
-  },
-  _initImage(){
-    const c = this._image = L.DomUtil.create("canvas", "leaflet-image-layer");
-    if (this._zoomAnimated) L.DomUtil.addClass(c, "leaflet-zoom-animated");
-    c.onselectstart = L.Util.falseFn;
-    c.onmousemove = L.Util.falseFn;
-    const nw = map.project(this._bounds.getNorthWest(), this._zref);
-    const se = map.project(this._bounds.getSouthEast(), this._zref);
-    this._nwZ = nw;
-    c.width  = Math.max(1, Math.round(se.x - nw.x));
-    c.height = Math.max(1, Math.round(se.y - nw.y));
-    this._g = c.getContext("2d");
-    this._pintarBase();
-  },
-  _mpp(){   // metros por píxel del mask, a ZREF, en la latitud del centro
-    return 156543.03392 * Math.cos(this._bounds.getCenter().lat * RAD) / Math.pow(2, this._zref);
-  },
-  _pintarBase(){
-    const g = this._g, w = this._image.width, h = this._image.height;
-    g.globalCompositeOperation = "source-over";
-    g.clearRect(0, 0, w, h);
-    const grad = g.createLinearGradient(0, 0, 0, h);
-    grad.addColorStop(0,   "#1e2b39");
-    grad.addColorStop(.55, "#16212e");
-    grad.addColorStop(1,   "#0f1822");
-    g.fillStyle = grad; g.fillRect(0, 0, w, h);
-    // grano determinista, una sola vez: se lee como territorio, no como error
-    g.globalAlpha = .05;
-    let s = 20250725;
-    const azar = () => (s = (s*1103515245 + 12345) & 0x7fffffff) / 0x7fffffff;
-    for (let i = 0; i < 120; i++){
-      const x = azar()*w, y = azar()*h, r = 22 + azar()*70;
-      const b = g.createRadialGradient(x,y,0,x,y,r);
-      b.addColorStop(0, azar() > .5 ? "#4a5f75" : "#060b12");
-      b.addColorStop(1, "transparent");
-      g.fillStyle = b; g.beginPath(); g.arc(x,y,r,0,7); g.fill();
-    }
-    g.globalAlpha = 1;
-  },
-  revelar(lat, lon){
-    const p = map.project(L.latLng(lat, lon), this._zref).subtract(this._nwZ);
-    const r = Math.max(8, CONFIG.radioNiebla / this._mpp());
-    const g = this._g;
-    g.globalCompositeOperation = "destination-out";
-    const grad = g.createRadialGradient(p.x, p.y, r*0.35, p.x, p.y, r);
-    grad.addColorStop(0,   "rgba(0,0,0,1)");
-    grad.addColorStop(.72, "rgba(0,0,0,.92)");
-    grad.addColorStop(1,   "rgba(0,0,0,0)");
-    g.fillStyle = grad; g.beginPath(); g.arc(p.x, p.y, r, 0, 7); g.fill();
-    g.globalCompositeOperation = "source-over";
-  },
-  reconstruir(rastro){
-    this._pintarBase();
-    for (const [la, lo] of rastro) this.revelar(la, lo);
-  },
-  limpiarTodo(){ this._g.clearRect(0, 0, this._image.width, this._image.height); },
-});
+// metros por píxel de pantalla al zoom actual (en la latitud del jugador)
+function mppPantalla(){
+  const lat = pos ? pos.lat : map.getCenter().lat;
+  return 40075016.686 * Math.abs(Math.cos(lat * RAD)) / Math.pow(2, map.getZoom() + 8);
+}
 
-let niebla = null;         // instancia de NieblaOverlay
+function despejarEn(x, y, r){
+  const g = gN.createRadialGradient(x, y, r*0.35, x, y, r);
+  g.addColorStop(0, "rgba(0,0,0,1)"); g.addColorStop(.72, "rgba(0,0,0,.92)"); g.addColorStop(1, "rgba(0,0,0,0)");
+  gN.fillStyle = g; gN.beginPath(); gN.arc(x, y, r, 0, 7); gN.fill();
+}
+
+/* Base a pantalla completa y agujeros donde ha pasado el jugador (sólo los que
+   caen en la vista; el resto se descarta, así da igual cuántas pisadas lleve).
+   Terminada la yincana (o sin estaciones), sin niebla. */
+function pintarNiebla(){
+  if (!nieblaListo) return;
+  gN.setTransform(dpr, 0, 0, dpr, 0, 0);
+  gN.globalCompositeOperation = "source-over";
+  gN.clearRect(0, 0, W, H);
+  if (!estacionActiva()) return;
+  gN.drawImage(baseNiebla, 0, 0, W, H);
+  gN.globalCompositeOperation = "destination-out";
+  const r = Math.max(10, CONFIG.radioNiebla / mppPantalla());
+  for (const [la, lo] of estado.rastro){
+    const p = map.latLngToContainerPoint(L.latLng(la, lo));
+    if (p.x < -r || p.x > W + r || p.y < -r || p.y > H + r) continue;   // fuera de vista
+    despejarEn(p.x, p.y, r);
+  }
+  if (pos){
+    const p = map.latLngToContainerPoint(L.latLng(pos.lat, pos.lon));
+    despejarEn(p.x, p.y, r);
+  }
+  gN.globalCompositeOperation = "source-over";
+}
+
 let rastroLinea = null;    // L.polyline del recorrido
 let circuloPrec = null;    // L.circle de la incertidumbre del GPS
 
@@ -1046,38 +1035,34 @@ function refrescarRastroLinea(){
   }
 }
 
-/* Monta el mapa de la zona: niebla, rastro, spawns y vista. Idempotente: una
-   etiqueta recarga la página y esto vuelve a pasar por aquí. */
+/* Monta el mapa: vista, rastro y spawns. La niebla es a pantalla completa, así
+   que no hay zona que montar. Idempotente: una etiqueta recarga la página y esto
+   vuelve a pasar por aquí. La vista inicial cae en el jugador (o, sin señal aún,
+   en donde haya estaciones). */
 let mapaMontado = false;
 function montarMapa(){
-  map.invalidateSize({ animate: false });   // que el mapa sepa su tamaño antes de fitBounds
-  const bounds = boundsDeJuego();
-  ZREF = elegirZref(bounds);
-  // La vista tiene que estar puesta ANTES de añadir capas: Leaflet difiere
-  // addLayer hasta que el mapa está "listo" (whenReady), y la niebla necesita
-  // que su canvas exista ya para poder reconstruir el rastro encima.
+  map.invalidateSize({ animate: false });
   if (!map._loaded){
     if (pos) map.setView([pos.lat, pos.lon], ZOOM_JUEGO);
-    else map.fitBounds(bounds, { padding: [20,20], maxZoom: ZOOM_JUEGO });
+    else map.fitBounds(boundsDeJuego(), { padding: [20,20], maxZoom: ZOOM_JUEGO });
   }
   mapaMontado = true;
-  if (niebla) map.removeLayer(niebla);
-  niebla = new NieblaOverlay(bounds, ZREF, { pane: "niebla" }).addTo(map);
-  niebla.reconstruir(estado.rastro);
-  if (!estacionActiva()) niebla.limpiarTodo();   // yincana terminada: mapa entero
   refrescarRastroLinea();
   refrescarSpawns();
   dimensionar();
 }
 
-// dimensiona el lienzo del HUD y avisa a Leaflet del tamaño del contenedor
+// dimensiona los lienzos (niebla + HUD) y avisa a Leaflet del tamaño
 function dimensionar(){
   dpr = Math.min(window.devicePixelRatio || 1, 2);
   const r = cajaMapa.getBoundingClientRect();
   W = r.width; H = r.height;
-  cHud.width = Math.round(W*dpr); cHud.height = Math.round(H*dpr);
+  for (const c of [cNiebla, cHud]){ c.width = Math.round(W*dpr); c.height = Math.round(H*dpr); }
   gH.setTransform(dpr, 0, 0, dpr, 0, 0);
   if (map) map.invalidateSize({ animate: false });
+  pintarBaseNiebla();
+  nieblaListo = true;
+  pintarNiebla();
   repintar = true;
 }
 
@@ -1126,7 +1111,6 @@ function alRecibirPosicion(p){
   if (!ult || distancia(ult[0], ult[1], pos.lat, pos.lon) > 10){
     const punto = [+pos.lat.toFixed(6), +pos.lon.toFixed(6)];
     estado.rastro.push(punto);
-    if (niebla) niebla.revelar(punto[0], punto[1]);   // pica el agujero de golpe
     if (rastroLinea) rastroLinea.addLatLng(punto);
     guardar(estado);
     sinMovimiento = false;
@@ -1145,6 +1129,7 @@ function alRecibirPosicion(p){
 
   comprobarSpawns();
 
+  pintarNiebla();       // la niebla te sigue: se repinta con la nueva posición
   repintar = true;
   refrescarInstrumento();
 }
@@ -1270,8 +1255,9 @@ let quietud = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 let repintar = true;   // hay algo nuevo que dibujar en el HUD
 let enZoom = false;    // durante la animación de zoom, la proyección miente (bug Leaflet)
 map.on("zoomstart", () => { enZoom = true; });
-map.on("zoomend",   () => { enZoom = false; repintar = true; });
-map.on("move",      () => { repintar = true; });   // al seguir al jugador, recolocar el HUD
+map.on("zoomend",   () => { enZoom = false; repintar = true; pintarNiebla(); });
+// Al mover el mapa (seguir al jugador o arrastrar) la niebla y el HUD se recolocan.
+map.on("move",      () => { repintar = true; if (!enZoom) pintarNiebla(); });
 
 /* El HUD dibuja sólo lo animado: marcador y anillos de sónar, en la posición de
    pantalla del jugador (Leaflet proyecta). El rastro, el círculo de precisión y
@@ -1514,7 +1500,7 @@ function metrosCaminados(){
 }
 
 function mostrarFinal(){
-  if (niebla) niebla.limpiarTodo();   // sin estación activa: se disuelve la niebla
+  pintarNiebla();   // sin estación activa: pintarNiebla deja el mapa entero a la vista
   const cont = document.getElementById("finMedallas");
   cont.innerHTML = "";
   TODAS.forEach((e, i) => {

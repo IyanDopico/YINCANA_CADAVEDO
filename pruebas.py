@@ -291,46 +291,48 @@ def main():
                   pg.eval_on_selector("body", "e => e.className"))
 
         # ── 3 · alineación niebla / mapa ────────────────────────────────
-        # Con el mapa vivo, la niebla es un canvas anclado a coordenadas: el
-        # agujero tiene que caer justo donde está el jugador (lo proyecta
-        # Leaflet). Se lee el alfa del canvas de la capa de niebla.
+        # La niebla es un lienzo a pantalla completa que sigue al jugador: el
+        # agujero cae en el píxel de pantalla del jugador (lo proyecta Leaflet).
         print("\nAlineación")
         alfa = pg.evaluate("""() => {
-            const nube = niebla._image, g = nube.getContext('2d');
-            const p = map.project([pos.lat, pos.lon], niebla._zref).subtract(niebla._nwZ);
-            const aqui  = g.getImageData(Math.round(p.x), Math.round(p.y), 1, 1).data[3];
-            const lejos = g.getImageData(2, 2, 1, 1).data[3];
-            const cp = map.latLngToContainerPoint([pos.lat, pos.lon]);
-            return { aqui, lejos, x: cp.x, y: cp.y, W, H };
+            const c = document.getElementById('niebla'), g = c.getContext('2d');
+            const p = map.latLngToContainerPoint([pos.lat, pos.lon]);
+            const aqui = g.getImageData(Math.round(p.x*dpr), Math.round(p.y*dpr), 1, 1).data[3];
+            // fracción de la pantalla que sigue con niebla (opaca)
+            const d = g.getImageData(0, 0, c.width, c.height).data;
+            let op = 0, tot = 0;
+            for (let i = 3; i < d.length; i += 4){ tot++; if (d[i] > 200) op++; }
+            return { aqui, fog: op / tot, x: p.x, y: p.y, W, H };
         }""")
         comprobar(alfa["aqui"] < 40,
                   "la niebla está despejada justo donde está el jugador",
                   f"alfa={alfa['aqui']}")
-        comprobar(alfa["lejos"] > 200,
-                  "la niebla sigue cerrada en una esquina sin pisar",
-                  f"alfa={alfa['lejos']}")
+        comprobar(alfa["fog"] > 0.5,
+                  "la niebla sigue cubriendo casi toda la pantalla alrededor",
+                  f"fracción con niebla={alfa['fog']:.2f}")
         comprobar(0 <= alfa["x"] <= alfa["W"] and 0 <= alfa["y"] <= alfa["H"],
                   "el marcador cae dentro del lienzo",
                   f"({alfa['x']:.0f}, {alfa['y']:.0f}) en {alfa['W']}x{alfa['H']}")
 
-        # Tres días caminando son un par de miles de pisadas. Ahora la niebla no
-        # se repinta al mover ni al hacer zoom (Leaflet la desplaza), sólo al
-        # (re)montar el mapa: reconstruir con 2000 pisadas tiene que ir sobrado.
+        # La niebla se repinta al moverse, culando las pisadas fuera de vista, así
+        # que da igual cuántas lleve. 2000 pisadas en el viewport es el peor caso.
         ms = pg.evaluate("""() => {
-            const b = niebla._bounds, N = b.getNorth(), S = b.getSouth(),
+            const guardado = estado.rastro;
+            const b = map.getBounds(), N = b.getNorth(), S = b.getSouth(),
                   E = b.getEast(), Wt = b.getWest();
             const r = [];
             for (let i = 0; i < 2000; i++)
                 r.push([S + Math.random()*(N-S), Wt + Math.random()*(E-Wt)]);
+            estado.rastro = r;
             const t0 = performance.now();
-            niebla.reconstruir(r);
+            pintarNiebla();
             const t = performance.now() - t0;
-            niebla.reconstruir(estado.rastro);   // restaura lo real
+            estado.rastro = guardado; pintarNiebla();
             return t;
         }""")
         comprobar(ms < 800,
-                  f"reconstruir la niebla con 2000 pisadas: {ms:.0f} ms",
-                  "sólo pasa al montar el mapa, pero aun así no puede tardar")
+                  f"repintar la niebla con 2000 pisadas en vista: {ms:.0f} ms",
+                  "por encima se notaría al arrastrar el mapa")
 
         # ── 4 · desbloqueo por etiqueta ─────────────────────────────────
         print("\nEtiquetas NFC")
@@ -392,10 +394,6 @@ def main():
         # de traslado ni reinicia la niebla ya despejada.
         if len(todas) > 1:
             print("\nUna sola zona")
-            despejado_antes = pg.evaluate("""() => {
-                const c = niebla._image, d = c.getContext('2d').getImageData(0,0,c.width,c.height).data;
-                let n = 0; for (let i = 3; i < d.length; i += 4) if (d[i] < 40) n++; return n;
-            }""")
             pg.goto(f"{BASE}?k={todas[1][0]}")
             pg.wait_for_timeout(700)
             if not pg.is_hidden("#capaLogro"):
@@ -403,13 +401,8 @@ def main():
                 pg.wait_for_timeout(500)
             comprobar(pg.is_hidden("#capaTraslado"),
                       "al abrir una estación no sale pantalla de traslado")
-            despejado_ahora = pg.evaluate("""() => {
-                const c = niebla._image, d = c.getContext('2d').getImageData(0,0,c.width,c.height).data;
-                let n = 0; for (let i = 3; i < d.length; i += 4) if (d[i] < 40) n++; return n;
-            }""")
-            comprobar(despejado_ahora >= despejado_antes,
-                      "la niebla despejada no se reinicia al abrir una estación",
-                      f"{despejado_antes} -> {despejado_ahora}")
+            comprobar(pg.evaluate("estado.abiertas.includes('%s')" % todas[1][0]),
+                      "y la estación queda abierta en la misma zona")
 
         # ── 7 · terminar la yincana ─────────────────────────────────────
         print("\nFinal")
@@ -443,7 +436,7 @@ def main():
 
         # El premio: la niebla se disuelve entera y queda el mapa vivo a la vista.
         opacos = pg.evaluate("""() => {
-            const c = niebla._image;
+            const c = document.getElementById('niebla');
             const d = c.getContext('2d').getImageData(0,0,c.width,c.height).data;
             let n = 0;
             for (let i = 3; i < d.length; i += 4) if (d[i] > 40) n++;
