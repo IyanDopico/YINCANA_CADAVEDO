@@ -12,7 +12,7 @@ No hace falta instalar nada en los móviles de tus primos.
 | | |
 |---|---|
 | `index.html` | La aplicación entera. Toda la configuración está arriba del todo, en el bloque `CONFIG`. |
-| `mapa.py` | Prepara `mapa.jpg` y calcula sus esquinas exactas. Se ejecuta una vez, en tu ordenador. |
+| `mapa.py` | Prepara la imagen de un mapa y calcula sus esquinas exactas. Se ejecuta una vez por capítulo, en tu ordenador. |
 | `sw.js` | Service worker: hace que funcione sin cobertura. |
 | `manifest.json` | Para poder añadirla a la pantalla de inicio. |
 | `pruebas.py` | Recorre la ruta con un GPS falso y comprueba que todo responde. Ejecútalo tras cada cambio. |
@@ -37,24 +37,37 @@ pip install playwright && playwright install chromium
 python3 pruebas.py
 ```
 
-Simula el recorrido completo y valida 39 comportamientos. Con `--capturas`
+Simula el recorrido completo y valida 56 comportamientos. Con `--capturas`
 deja además los pantallazos en `capturas/`.
 
 ## Puesta en marcha
 
-### 1 · El mapa
+### 1 · Los mapas
 
-En openstreetmap.org, encuadra el pueblo y abre la pestaña **Exportar**: ahí
-tienes los cuatro límites del recuadro que estás viendo. Con esos números:
+La yincana va por capítulos: un mapa por zona. Cadavedo está estirado —del
+apeadero a La Regalina hay casi dos kilómetros— y en un solo mapa cada pisada
+despejaría el 0,13 %: caminarían un montón sin ver abrirse nada. Partido en
+dos, el casco va al 0,70 % por pisada y La Regalina al 2,38 %.
+
+Un `mapa.py` por capítulo:
 
 ```bash
 pip install pillow
-python3 mapa.py <sur> <oeste> <norte> <este>
+python3 mapa.py 43.5422 -6.3926 43.5505 -6.3852 --salida mapa-pueblo.jpg
 ```
 
-Te deja `mapa.jpg` y te imprime el bloque `esquinas` ya calculado. Pégalo en
-`index.html` **tal cual**: son las esquinas reales de la imagen recortada, no
-los números que pediste, y esa diferencia importa.
+```bash
+python3 mapa.py 43.5528 -6.3755 43.5564 -6.3705 --salida mapa-regalina.jpg
+```
+
+Los cuatro números son `sur oeste norte este`; si cambias de recuadro, sácalos
+de openstreetmap.org con la pestaña **Exportar**.
+
+Cada ejecución imprime un bloque `esquinas`. Pégalo en el capítulo que
+corresponda de `index.html` **tal cual**: son las esquinas reales de la imagen
+recortada, no los números que pediste, y esa diferencia importa. Los recuadros
+que hay ahora en `CONFIG` son los pedidos, no los recortados, así que hay que
+sustituirlos por lo que imprima `mapa.py`.
 
 Si no pones imagen no pasa nada: la app funciona igual y al despejar se ve una
 retícula.
@@ -73,8 +86,16 @@ y pulsa *Marcar punto*. Con prisa salen coordenadas malas y luego el juego no
 cuadra; esperar treinta segundos en cada punto es la diferencia entre que
 funcione y que no.
 
-Al terminar, *Copiar al portapapeles*. Te da dos cosas: las estaciones listas
-para pegar en `CONFIG.estaciones`, y la URL que hay que grabar en cada etiqueta.
+Arriba tienes el mapa con lo que llevas marcado: cada punto en oro, con el
+círculo de `radioZona` alrededor —eso es lo que van a tener que barrer buscando
+la etiqueta— y las estaciones que ya están en el `CONFIG` en azul hueco, para
+comparar. Si un punto cae fuera de todos los recuadros sale un aviso en rojo:
+ese punto no se vería en el juego. Los botones de arriba cambian de mapa, y al
+coger señal salta solo al del sitio donde estés.
+
+Al terminar, *Copiar al portapapeles*. Te da dos cosas: las estaciones ya
+agrupadas por capítulo, listas para pegar en el `estaciones` que toque, y la URL
+que hay que grabar en cada etiqueta.
 
 ### 3 · Grabar las etiquetas
 
@@ -94,8 +115,13 @@ igual en iPhone.
 
 ### 4 · Rellenar las pistas
 
-En `CONFIG.estaciones`, el campo `pista` de cada una dice dónde está **la
-siguiente**, no ella misma. El orden del array es el orden del juego.
+En el `estaciones` de cada capítulo, el campo `pista` de cada una dice dónde
+está **la siguiente**, no ella misma. El orden de los capítulos y el de los
+arrays dentro es el orden del juego.
+
+Al pasar de un capítulo al siguiente sale la pantalla de traslado, que es donde
+se les dice que hay que desplazarse. El texto está en `traslado` del capítulo al
+que se va.
 
 ## Ajustes
 
@@ -106,6 +132,9 @@ En `CONFIG`:
 - `radioZona` (25 m) — a partir de aquí avisa de que están encima. No bajes de
   20: entre fachadas de piedra el GPS no da para más.
 - `radioAudio` (150 m) — desde dónde empieza a pitar.
+
+Y en cada capítulo: `mapa`, `esquinas`, `inicioDemo` (por dónde arranca el
+muñeco de la demo), `estaciones` y, salvo en el primero, `traslado`.
 
 Otras direcciones útiles:
 

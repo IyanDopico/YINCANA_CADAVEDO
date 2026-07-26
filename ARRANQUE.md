@@ -8,13 +8,12 @@ repetir lo que ya está ahí.
 ## Mensaje para pegar
 
 > Yincana con niebla de guerra para mis primos de 6 y 10 años, en Cadavedo
-> (Valdés, Asturias), en agosto. El código base ya está y las 39 pruebas pasan:
+> (Valdés, Asturias), en agosto. El código base ya está y las 56 pruebas pasan:
 > ejecuta `python3 pruebas.py` antes de nada para confirmarlo. Abre también
 > `?demo` en el navegador para ver de qué va sin necesidad de GPS.
 >
 > Léete `CLAUDE.md` y `LEEME.md`. Las tareas están abajo en este archivo.
-> Empieza por la 1: hay que decidir el tamaño del mapa, y de eso depende todo
-> lo demás.
+> Empieza por la 3: dos móviles, dos partidas.
 >
 > Antes de escribir código, dime cómo lo enfocarías y qué alternativas hay.
 
@@ -23,42 +22,37 @@ repetir lo que ya está ahí.
 ## Estado
 
 Funciona de punta a punta con GPS simulado: niebla, frío/caliente, sónar,
-desbloqueo por etiqueta, medallas, modo autor, demo, persistencia entre
-recargas, etiqueta repetida, etiqueta adelantada y clave inventada.
+desbloqueo por etiqueta, medallas, capítulos, modo autor, demo, persistencia
+entre recargas, etiqueta repetida, etiqueta adelantada y clave inventada.
+Las 56 comprobaciones de `pruebas.py` pasan.
 
-Sin probar en la calle. Sin `mapa.jpg`. Sin desplegar. Y las coordenadas de las
-estaciones son de OpenStreetMap, no de campo: sirven para la demo y nada más.
+Sin probar en la calle. Sin las imágenes de los mapas. Sin desplegar. Y las
+coordenadas de las estaciones son de OpenStreetMap, no de campo: sirven para la
+demo y nada más.
+
+## Hecho
+
+### 1 · Tamaño del mapa — por capítulos
+Partido en dos: `pueblo` (923 × 597 m, 0,70 % por pisada) y `regalina`
+(400 × 404 m, 2,38 %). Contra el 0,13 % del recuadro único. La Regalina sigue
+dentro y además es el mapa que más rápido se abre, que para un final está bien.
+
+Montado como lista `CONFIG.capitulos` dentro del mismo archivo, no un `CONFIG`
+por capítulo: así las etiquetas apuntan todas a la misma URL y el capítulo
+activo se deduce de lo que llevan abierto, sin guardar nada nuevo.
+
+Entre capítulos sale una pantalla de traslado, que es donde se les avisa de que
+hay que desplazarse. El texto está en `traslado` del capítulo al que se va.
+
+### 2 · Los puntos sobre el mapa en modo autor
+El panel ya no tapa el mapa: se ha bajado al sitio del instrumento. Encima se
+ven los puntos marcados en oro con su círculo de `radioZona`, y las estaciones
+del `CONFIG` en azul hueco para comparar. Si un punto cae fuera de todos los
+recuadros sale un aviso en rojo y en la salida va apartado en un bloque propio.
+Los botones de arriba cambian de mapa, y al coger señal salta solo al del sitio
+donde estés.
 
 ## Tareas, por orden
-
-### 1 · Decidir el tamaño del mapa
-La que condiciona el resto. Cadavedo está estirado: del apeadero a La Regalina
-hay 1 985 m, y del núcleo a La Regalina 1 196 m.
-
-Con el recuadro entero, cada pisada despeja el 0,13 % del mapa. Los críos
-caminan un montón y no ven abrirse casi nada, que es justo la gracia del juego.
-Ciñéndolo al casco del pueblo sube al 0,83 %, seis veces más, pero se queda
-fuera La Regalina, que es el sitio bonito y el mejor final posible.
-
-Opciones que se me ocurren, pero dime si hay más:
-
-- **Solo el casco.** Todo cerca, la niebla se abre a buen ritmo, y La Regalina
-  no sale. Lo más sencillo y lo mejor para el de 6 años.
-- **Todo en un mapa.** Sale La Regalina pero la última etapa es 1,2 km de tirón
-  y el mapa se abre a cuentagotas.
-- **Por capítulos.** Un mapa del casco para las sesiones de los días 1 y 2, y
-  otro de La Regalina para el final del día 3. Es lo que más me convence, pero
-  hay que ver qué supone: ¿un `CONFIG` por capítulo, o varias esquinas y varios
-  mapas dentro del mismo archivo?
-
-Compara antes de tocar código.
-
-### 2 · Ver los puntos sobre el mapa en modo autor
-Ahora mismo el modo autor da números y hay que fiarse. Si me equivoco en una
-esquina del recuadro, no me entero hasta estar en el pueblo con los críos.
-
-Que enseñe el mapa con los puntos ya marcados encima, y avise si uno cae fuera
-del recuadro. Es la tarea que me deja salir a marcar.
 
 ### 3 · Dos móviles, dos partidas
 Cada dispositivo tiene su `localStorage`, así que van por separado: los dos
@@ -92,6 +86,9 @@ registro NDEF y la página solo lo pinte.
 - **Las coordenadas de las tres estaciones.** Son de OpenStreetMap: apuntan al
   apeadero, al nodo del núcleo y a la ermita, no a donde vaya a esconder yo la
   etiqueta. Hay que recapturarlas todas con `?modo=autor`.
+- **Los recuadros de los dos capítulos.** Los que hay en `CONFIG` son los que
+  pedí, no los que devuelve `mapa.py` tras recortar. Al generar las imágenes hay
+  que pegar las esquinas que imprima, o la niebla se abrirá desplazada.
 - Precisión real del GPS entre fachadas de piedra. Hay que recorrer la ruta con
   `?modo=autor` y anotar la precisión en cada sitio candidato. Donde no baje de
   25 m, esa estación va a otro lado.
@@ -104,12 +101,12 @@ registro NDEF y la página solo lo pinte.
 | | |
 |---|---|
 | Ya | Pedir las NTAG215 y probar el NFC con una etiqueta suelta |
-| Antes de subir | Tareas 1, 2 y 3, desplegar con HTTPS |
-| En el pueblo | Generar el mapa, marcar los puntos, anotar precisiones |
+| Antes de subir | Tarea 3, desplegar con HTTPS |
+| En el pueblo | Generar los dos mapas, marcar los puntos, anotar precisiones |
 | Después | Rellenar `CONFIG`, grabar las etiquetas, recorrido de prueba yo solo |
-| Reserva | Tareas 3 a 6, solo si sobra tiempo |
+| Reserva | Tareas 4 a 7, solo si sobra tiempo |
 
-Si algo va justo, esto se cae por este orden: 7, 6, 5, 4. Las tareas 1, 2 y 3 no.
+Si algo va justo, esto se cae por este orden: 7, 6, 5, 4. La tarea 3 no.
 
 Y el plan B de siempre: las pistas impresas en un sobre. Si muere un móvil o
 desaparece una etiqueta, la yincana sigue.

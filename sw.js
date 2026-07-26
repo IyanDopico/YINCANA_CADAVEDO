@@ -5,12 +5,13 @@
    Sube el número de VERSION cada vez que edites index.html o el mapa,
    o los móviles seguirán sirviendo la copia vieja. */
 
-const VERSION = "yincana-v1";
+const VERSION = "yincana-v2";
 
 const ARCHIVOS = [
   "./",
   "./index.html",
-  "./mapa.jpg",
+  "./mapa-pueblo.jpg",
+  "./mapa-regalina.jpg",
   "./manifest.json",
 ];
 

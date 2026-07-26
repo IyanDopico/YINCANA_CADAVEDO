@@ -68,6 +68,8 @@ header{
 }
 .punto.hecho{background:var(--oro); border-color:var(--oro); box-shadow:0 0 8px rgba(200,149,47,.65)}
 .punto.activo{border-color:var(--caliente)}
+/* separación entre capítulos en el medallero */
+.corte{width:1px; height:10px; background:var(--tinta); margin:0 3px}
 
 /* ---------- MAPA ---------- */
 #lienzos{
@@ -162,13 +164,30 @@ footer{
   text-transform:uppercase; color:var(--oro);
 }
 
-/* ---------- MODO AUTOR ---------- */
+/* ---------- MODO AUTOR ----------
+   El panel no tapa el mapa: ocupa el sitio del instrumento, debajo, y deja
+   ver dónde caen los puntos que vas marcando. Sin niebla, que aquí estorba. */
 #autor{
-  position:fixed; inset:0; z-index:60; background:var(--niebla-baja);
-  padding:18px 16px calc(18px + env(safe-area-inset-bottom));
+  flex:0 0 auto; max-height:46vh; z-index:60; background:var(--niebla-baja);
+  border-top:1px solid var(--tinta);
+  padding:14px 16px calc(14px + env(safe-area-inset-bottom));
   overflow-y:auto; font-family:var(--mono); font-size:13px;
 }
 #autor[hidden]{display:none}
+body.autor footer{display:none}
+body.autor #niebla{display:none}
+#aCapitulos{display:flex; gap:8px; margin:0 0 14px}
+#aCapitulos button{
+  flex:1; font-family:var(--mono); font-size:12px; padding:8px 6px;
+  border-radius:999px; border:1px solid var(--tinta); cursor:pointer;
+  background:transparent; color:var(--hueso-tenue); touch-action:manipulation;
+}
+#aCapitulos button.activo{border-color:var(--caliente); color:var(--caliente)}
+.alerta{
+  font-family:var(--sans); font-size:13px; line-height:1.45;
+  color:#e07b6a; margin:0 0 14px;
+}
+.alerta[hidden]{display:none}
 #autor h2{font-family:var(--serif); font-size:20px; font-weight:400; margin:0 0 4px}
 #autor .aviso{color:var(--hueso-tenue); font-family:var(--sans); font-size:13px; margin:0 0 18px; line-height:1.5}
 .campo{
@@ -256,10 +275,21 @@ footer{
   <button class="boton" id="btnSeguir">Seguir</button>
 </div>
 
+<!-- Traslado de un capítulo al siguiente -->
+<div class="capa" id="capaTraslado" hidden>
+  <div class="medalla" id="trasladoIcono">🚶</div>
+  <span class="sello">Mapa nuevo</span>
+  <h1 id="trasladoTitulo">—</h1>
+  <p id="trasladoTexto">—</p>
+  <button class="boton" id="btnTraslado">Vamos</button>
+</div>
+
 <!-- Modo autor -->
 <div id="autor" hidden>
   <h2>Modo autor</h2>
   <p class="aviso">Quédate quieto hasta que la precisión baje de 10 m, luego marca el punto. Cuanto más esperes, mejor sale.</p>
+  <div id="aCapitulos"></div>
+  <p class="alerta" id="aAlerta" hidden></p>
   <div class="campo"><span>latitud</span><b id="aLat">—</b></div>
   <div class="campo"><span>longitud</span><b id="aLon">—</b></div>
   <div class="campo"><span>precisión</span><b id="aPrec">—</b></div>
@@ -280,39 +310,74 @@ footer{
 const CONFIG = {
   pueblo: "Cadavedo",
 
-  // Imagen del mapa. Si no carga, la app funciona igual sobre una retícula.
-  mapa: "mapa.jpg",
-
-  // OJO: recuadro ancho, elegido para que la DEMO enseñe toda la geografía
-  // (estación, núcleo y La Regalina). Para jugar de verdad conviene apretarlo
-  // al casco del pueblo: ver la nota en ARRANQUE.md sobre el tamaño del mapa.
-  esquinas: { norte: 43.5560, sur: 43.5420, oeste: -6.3940, este: -6.3700 },
-
   radioNiebla: 35,   // m — cuánto despeja de mapa al caminar
   radioZona:   25,   // m — a partir de aquí avisa de que están encima
   radioAudio: 150,   // m — a partir de aquí empieza a pitar
 
-  // Por dónde empieza a caminar el muñeco de la demo.
-  inicioDemo: [43.5432, -6.3925],
+  /* Cadavedo está estirado: del apeadero a La Regalina hay casi 2 km. En un
+     solo mapa cada pisada despejaría el 0,13 % y los críos caminarían un montón
+     sin ver abrirse nada. Partido en dos, el casco va al 0,70 % por pisada y
+     La Regalina al 2,38 %.
 
-  // COORDENADAS SIN VERIFICAR EN CAMPO. Salen de OpenStreetMap y de fuentes
-  // públicas, con lo que valen para la demo pero no para jugar: apuntan al
-  // sitio aproximado, no a donde vayas a esconder la etiqueta. Sustitúyelas
-  // por las que captures tú con ?modo=autor.
-  estaciones: [
-    { k:"a7f3c1", nombre:"El apeadero", lat:43.54295, lon:-6.39163, medalla:"🚂",
-      pista:"Empezamos donde para el tren de vía estrecha. Desde aquí, subid al pueblo: buscad el sitio con más hórreos juntos, esos graneros de madera subidos a cuatro patas. En Cadavedo hay casi cien." },
+     El capítulo activo se deduce de qué estaciones llevan abiertas, así que no
+     hay que guardar nada más: al recargar por una etiqueta se vuelve solo al
+     mapa que tocaba. Las etiquetas apuntan todas a la misma URL. */
+  capitulos: [
+    {
+      id: "pueblo",
+      nombre: "El pueblo",
 
-    { k:"b2e9d4", nombre:"Los hórreos",  lat:43.54978, lon:-6.38623, medalla:"🌽",
-      pista:"Ahora hacia el mar, al borde del acantilado. Hay una capilla pequeña, pintada de blanco y azul, con dos hórreos al lado y ochenta metros de caída hasta el agua." },
+      // Imagen del mapa. Si no carga, se juega igual sobre la retícula.
+      mapa: "mapa-pueblo.jpg",
+      esquinas: { norte: 43.5505, sur: 43.5422, oeste: -6.3926, este: -6.3852 },
 
-    { k:"c8a05f", nombre:"La Regalina",  lat:43.55459, lon:-6.37296, medalla:"⛪",
-      pista:"" },
+      // Por dónde empieza a caminar el muñeco de la demo.
+      inicioDemo: [43.5434, -6.3921],
+
+      // COORDENADAS SIN VERIFICAR EN CAMPO. Salen de OpenStreetMap y de fuentes
+      // públicas, con lo que valen para la demo pero no para jugar: apuntan al
+      // sitio aproximado, no a donde vayas a esconder la etiqueta. Sustitúyelas
+      // por las que captures tú con ?modo=autor.
+      estaciones: [
+        { k:"a7f3c1", nombre:"El apeadero", lat:43.54295, lon:-6.39163, medalla:"🚂",
+          pista:"Empezamos donde para el tren de vía estrecha. Desde aquí, subid al pueblo: buscad el sitio con más hórreos juntos, esos graneros de madera subidos a cuatro patas. En Cadavedo hay casi cien." },
+
+        { k:"b2e9d4", nombre:"Los hórreos",  lat:43.54978, lon:-6.38623, medalla:"🌽",
+          pista:"El mapa del pueblo se acaba aquí. Buscad la etiqueta entre los hórreos." },
+      ],
+    },
+    {
+      id: "regalina",
+      nombre: "La Regalina",
+      mapa: "mapa-regalina.jpg",
+      esquinas: { norte: 43.5564, sur: 43.5528, oeste: -6.3755, este: -6.3705 },
+      inicioDemo: [43.5535, -6.3748],
+
+      // Se enseña al terminar el capítulo anterior, antes de abrir el mapa
+      // nuevo. Aquí es donde se les dice que hay que desplazarse.
+      traslado: {
+        icono: "🚶",
+        titulo: "Queda un mapa más",
+        texto: "Este ya lo tenéis entero. El último está en La Regalina, al borde del acantilado: hay algo más de un kilómetro. Cuando lleguéis, se abrirá solo.",
+        boton: "Estamos de camino",
+      },
+
+      estaciones: [
+        { k:"c8a05f", nombre:"La Regalina",  lat:43.55459, lon:-6.37296, medalla:"⛪",
+          pista:"Ya estáis en el mapa del final. Buscad la capilla blanca y azul con los dos hórreos al lado." },
+      ],
+    },
   ],
 
   finalTitulo: "El tesoro es vuestro",
   finalTexto:  "Habéis cruzado Cadavedo de punta a punta, desde el tren hasta el acantilado. El tesoro está donde el Padre Galo montó la fiesta: mirad debajo del hórreo de la derecha.",
 };
+
+/* Atajos: la lista de estaciones en orden de juego y a qué capítulo va cada
+   una. El resto del código no debería tener que saber de capítulos. */
+const CAPS   = CONFIG.capitulos;
+const TODAS  = CAPS.flatMap(c => c.estaciones);
+const CAP_DE = new Map(CAPS.flatMap(c => c.estaciones.map(e => [e.k, c])));
 
 /* ══════════════════════════════════════════════════════════════
    2 · ESTADO PERSISTENTE
@@ -356,8 +421,27 @@ function distancia(la1, lo1, la2, lo2){
   return 2 * R_TIERRA * Math.asin(Math.min(1, Math.sqrt(a)));
 }
 
-const E = CONFIG.esquinas;
+// Esquinas del capítulo que se está pintando. Cambia al pasar de mapa.
+let E = CAPS[0].esquinas;
 let W = 0, H = 0, mPorPx = 1;
+
+/* ¿Cae este punto en el mapa de ahora? El rastro es uno solo para toda la
+   yincana, así que al pintar el mapa del capítulo hay que dejar fuera las
+   pisadas de los otros. El margen deja entrar las de justo al borde, que sí
+   despejan un trozo. */
+function dentroDelMapa(lat, lon, margen = 0){
+  const mLat = margen / 111320;
+  const mLon = margen / (111320 * Math.cos(E.norte*RAD));
+  return lat >= E.sur   - mLat && lat <= E.norte + mLat &&
+         lon >= E.oeste - mLon && lon <= E.este  + mLon;
+}
+
+/* ¿A qué capítulo pertenece este punto? Null si no cae en ningún recuadro,
+   que en modo autor significa que ese punto no se vería en ningún mapa. */
+function capituloQueContiene(lat, lon){
+  return CAPS.find(c => lat >= c.esquinas.sur   && lat <= c.esquinas.norte &&
+                        lon >= c.esquinas.oeste && lon <= c.esquinas.este) || null;
+}
 
 /* La imagen se dibuja con object-fit:contain, o sea centrada y con barras.
    Los lienzos ocupan todo el contenedor, así que hay que proyectar sobre el
@@ -433,7 +517,9 @@ function pintarNiebla(){
   gN.globalAlpha = 1;
 
   gN.globalCompositeOperation = "destination-out";
-  for (const [la,lo] of estado.rastro) despejar(la, lo);
+  for (const [la,lo] of estado.rastro){
+    if (dentroDelMapa(la, lo, CONFIG.radioNiebla)) despejar(la, lo);
+  }
   gN.globalCompositeOperation = "source-over";
 }
 
@@ -446,6 +532,21 @@ function despejar(lat, lon){
   g.addColorStop(1,   "rgba(0,0,0,0)");
   gN.fillStyle = g;
   gN.beginPath(); gN.arc(x,y,r,0,7); gN.fill();
+}
+
+/* Cambiar de capítulo es cambiar de imagen, de esquinas y de niebla. Se llama
+   al arrancar y al terminar cada capítulo, así que tiene que ser idempotente:
+   una etiqueta recarga la página y esto vuelve a pasar por aquí. */
+let capPintado = null;
+
+function aplicarCapitulo(cap){
+  if (cap === capPintado) return;
+  capPintado = cap;
+  E = cap.esquinas;
+  imgMapa.style.display = "";
+  imgMapa.src = cap.mapa;   // al cargar dispara dimensionar(), que repinta
+  dimensionar();            // y esto cubre el caso de que la imagen no llegue
+  if (esAutor) pintarCapitulos();
 }
 
 /* ══════════════════════════════════════════════════════════════
@@ -474,9 +575,12 @@ function alRecibirPosicion(p){
   const ult = estado.rastro[estado.rastro.length-1];
   if (!ult || distancia(ult[0], ult[1], pos.lat, pos.lon) > 10){
     estado.rastro.push([+pos.lat.toFixed(6), +pos.lon.toFixed(6)]);
-    gN.globalCompositeOperation = "destination-out";
-    despejar(pos.lat, pos.lon);
-    gN.globalCompositeOperation = "source-over";
+    // Se guarda siempre, se pinta sólo si cae en el mapa de este capítulo.
+    if (dentroDelMapa(pos.lat, pos.lon, CONFIG.radioNiebla)){
+      gN.globalCompositeOperation = "destination-out";
+      despejar(pos.lat, pos.lon);
+      gN.globalCompositeOperation = "source-over";
+    }
     guardar(estado);
     sinMovimiento = false;
   }
@@ -574,16 +678,28 @@ function fotograma(t){
   // rastro caminado, en oro tenue: el mapa que estáis levantando
   if (estado.rastro.length > 1){
     gH.beginPath();
-    estado.rastro.forEach(([la,lo], i) => {
-      const [x,y] = aPixel(la,lo);
-      i ? gH.lineTo(x,y) : gH.moveTo(x,y);
-    });
+    let seguido = false;   // si la pisada anterior también caía en este mapa
+    for (const [la,lo] of estado.rastro){
+      const aqui = dentroDelMapa(la, lo, CONFIG.radioNiebla);
+      if (aqui){
+        const [x,y] = aPixel(la,lo);
+        seguido ? gH.lineTo(x,y) : gH.moveTo(x,y);
+      }
+      seguido = aqui;
+    }
     gH.strokeStyle = "rgba(200,149,47,.28)";
     gH.lineWidth = 1.5; gH.lineJoin = "round"; gH.lineCap = "round";
     gH.stroke();
   }
 
-  const [x,y] = aPixel(pos.lat, pos.lon);
+  // Fuera del recuadro el marcador se pega al borde por el que se han salido,
+  // en hueco. Desaparecer sin más parecería que la aplicación se ha colgado.
+  const fuera = !dentroDelMapa(pos.lat, pos.lon);
+  let [x,y] = aPixel(pos.lat, pos.lon);
+  if (fuera){
+    x = Math.max(recto.x + 9, Math.min(recto.x + recto.w - 9, x));
+    y = Math.max(recto.y + 9, Math.min(recto.y + recto.h - 9, y));
+  }
   const proximidad = distActual == null ? 0
       : Math.max(0, Math.min(1, 1 - (distActual - CONFIG.radioZona) /
                                    (CONFIG.radioAudio - CONFIG.radioZona)));
@@ -591,7 +707,7 @@ function fotograma(t){
   const color = mezcla("#3d7d8f", "#f2b134", t2);
 
   // círculo de incertidumbre del GPS
-  if (pos.prec){
+  if (pos.prec && !fuera){
     gH.beginPath();
     gH.arc(x, y, Math.max(6, pos.prec/mPorPx), 0, 7);
     gH.fillStyle = "rgba(61,125,143,.11)";
@@ -600,7 +716,7 @@ function fotograma(t){
   }
 
   // anillos de sónar, más rápidos cuanto más cerca
-  if (!quietud && distActual != null && distActual < CONFIG.radioAudio){
+  if (!quietud && !fuera && distActual != null && distActual < CONFIG.radioAudio){
     const periodo = 1900 - proximidad*1350;
     for (let k=0; k<2; k++){
       const f = (((t + k*periodo/2) % periodo) / periodo);
@@ -613,8 +729,12 @@ function fotograma(t){
 
   // marcador
   gH.beginPath(); gH.arc(x,y,7.5,0,7);
-  gH.fillStyle = color; gH.fill();
-  gH.strokeStyle = "#0d151d"; gH.lineWidth = 2.5; gH.stroke();
+  if (fuera){
+    gH.strokeStyle = color; gH.lineWidth = 2.5; gH.stroke();
+  } else {
+    gH.fillStyle = color; gH.fill();
+    gH.strokeStyle = "#0d151d"; gH.lineWidth = 2.5; gH.stroke();
+  }
 }
 
 function mezcla(a, b, t){
@@ -631,20 +751,31 @@ function tintar(c, a){
    8 · ESTACIONES Y DESBLOQUEO POR NFC
    ══════════════════════════════════════════════════════════════ */
 function estacionActiva(){
-  return CONFIG.estaciones.find(e => !estado.abiertas.includes(e.k)) || null;
+  return TODAS.find(e => !estado.abiertas.includes(e.k)) || null;
+}
+
+/* El capítulo de ahora es el de la estación que toca. Terminada la yincana,
+   el último: es donde está el tesoro y donde hay que dejarles el mapa. */
+function capituloActivo(){
+  const est = estacionActiva();
+  return est ? CAP_DE.get(est.k) : CAPS[CAPS.length-1];
 }
 
 function pintarMedallero(){
   const m = document.getElementById("medallero");
   m.innerHTML = "";
   const act = estacionActiva();
-  for (const e of CONFIG.estaciones){
-    const d = document.createElement("div");
-    d.className = "punto" +
-      (estado.abiertas.includes(e.k) ? " hecho" : "") +
-      (act && act.k === e.k ? " activo" : "");
-    m.appendChild(d);
-  }
+  CAPS.forEach((c, i) => {
+    if (i) m.appendChild(Object.assign(document.createElement("div"),
+                                       { className:"corte" }));
+    for (const e of c.estaciones){
+      const d = document.createElement("div");
+      d.className = "punto" +
+        (estado.abiertas.includes(e.k) ? " hecho" : "") +
+        (act && act.k === e.k ? " activo" : "");
+      m.appendChild(d);
+    }
+  });
 }
 
 function refrescarInstrumento(){
@@ -684,7 +815,7 @@ function mostrarPista(){
     return;
   }
   document.getElementById("pistaTitulo").textContent =
-    "Pista " + (CONFIG.estaciones.indexOf(est)+1) + " de " + CONFIG.estaciones.length;
+    "Pista " + (TODAS.indexOf(est)+1) + " de " + TODAS.length;
   document.getElementById("pistaTexto").textContent = est.pista;
 }
 
@@ -695,7 +826,7 @@ function comprobarEtiqueta(){
   if (!k) return;
   history.replaceState(null, "", location.pathname);
 
-  const est = CONFIG.estaciones.find(e => e.k === k);
+  const est = TODAS.find(e => e.k === k);
   if (!est) return;
 
   if (estado.abiertas.includes(est.k)){
@@ -729,16 +860,36 @@ function celebrar(est){
   document.getElementById("capaLogro").hidden = false;
 
   // En la demo nadie va a estar pulsando: se cierra sola y sigue el paseo.
-  if (esDemo) setTimeout(() => {
-    document.getElementById("capaLogro").hidden = true;
-    mostrarPista();
-  }, 3200);
+  if (esDemo) setTimeout(seguirDespuesDelLogro, 3200);
 
   abrirAudio();
   [0,110,230,400].forEach((t,i) => setTimeout(() => pitido([660,880,1100,1320][i], 190, .26), t));
   vibrar([70,60,70,60,300]);
   pintarMedallero();
   mostrarPista();
+}
+
+/* Al cerrar la medalla puede que la estación siguiente esté en otro mapa. Ahí
+   no se cambia de golpe: primero se les avisa de que hay que desplazarse, que
+   si no aparece un mapa desconocido sin explicación. */
+function seguirDespuesDelLogro(){
+  document.getElementById("capaLogro").hidden = true;
+  const cap = capituloActivo();
+  if (cap !== capPintado && !esDemo){   // la demo no espera a nadie
+    mostrarTraslado(cap);
+    return;
+  }
+  aplicarCapitulo(cap);
+  mostrarPista();
+}
+
+function mostrarTraslado(cap){
+  const t = cap.traslado || {};
+  document.getElementById("trasladoIcono").textContent  = t.icono  || "🚶";
+  document.getElementById("trasladoTitulo").textContent = t.titulo || cap.nombre;
+  document.getElementById("trasladoTexto").textContent  = t.texto  || "";
+  document.getElementById("btnTraslado").textContent    = t.boton  || "Vamos";
+  document.getElementById("capaTraslado").hidden = false;
 }
 
 function avisoSimple(titulo, texto){
@@ -767,6 +918,8 @@ document.addEventListener("visibilitychange", () => {
 let puntos = [];
 try{ puntos = JSON.parse(localStorage.getItem("yincana.autor") || "[]"); }catch(e){}
 
+let autorAjustado = false;   // ya se ha saltado al mapa donde estás de verdad
+
 function refrescarAutor(precReal){
   document.getElementById("aLat").textContent = pos.lat.toFixed(6);
   document.getElementById("aLon").textContent = pos.lon.toFixed(6);
@@ -775,6 +928,70 @@ function refrescarAutor(precReal){
   el.className = precReal <= 10 ? "bien" : precReal <= 20 ? "regular" : "mal";
   const n = document.getElementById("aN");
   n.textContent = (+n.textContent) + 1;
+
+  // En cuanto hay señal, saltar al mapa del sitio donde estás. Si sales a
+  // marcar a La Regalina, que no te salga el mapa del pueblo.
+  if (!autorAjustado){
+    autorAjustado = true;
+    const c = capituloQueContiene(pos.lat, pos.lon);
+    if (c) aplicarCapitulo(c);
+  }
+}
+
+function pintarCapitulos(){
+  const cont = document.getElementById("aCapitulos");
+  cont.innerHTML = "";
+  if (CAPS.length < 2) return;      // con un mapa solo no hay nada que elegir
+  for (const c of CAPS){
+    const b = document.createElement("button");
+    b.textContent = c.nombre;
+    if (c === capPintado) b.className = "activo";
+    b.onclick = () => aplicarCapitulo(c);
+    cont.appendChild(b);
+  }
+}
+
+/* El mapa con los puntos encima: es lo que separa fiarse de los números de
+   ver que el punto cae donde crees. Cada punto lleva su círculo de radioZona,
+   que es lo que van a tener que barrer buscando la etiqueta. */
+function fotogramaAutor(){
+  requestAnimationFrame(fotogramaAutor);
+  gH.clearRect(0,0,W,H);
+
+  // las estaciones que ya están en el CONFIG, en hueco, para comparar
+  for (const e of capPintado.estaciones){
+    const [x,y] = aPixel(e.lat, e.lon);
+    gH.beginPath(); gH.arc(x,y,6,0,7);
+    gH.strokeStyle = "rgba(61,125,143,.75)"; gH.lineWidth = 1.5; gH.stroke();
+  }
+
+  for (const p of puntos){
+    if (capituloQueContiene(p.lat, p.lon) !== capPintado) continue;
+    const [x,y] = aPixel(p.lat, p.lon);
+
+    gH.beginPath(); gH.arc(x, y, Math.max(8, CONFIG.radioZona/mPorPx), 0, 7);
+    gH.strokeStyle = "rgba(200,149,47,.4)"; gH.lineWidth = 1; gH.stroke();
+
+    gH.beginPath(); gH.arc(x,y,6,0,7);
+    gH.fillStyle = "#c8952f"; gH.fill();
+    gH.strokeStyle = "#0d151d"; gH.lineWidth = 2; gH.stroke();
+
+    gH.font = "12px ui-monospace, Menlo, Consolas, monospace";
+    gH.fillStyle = "#e8e0cf";
+    gH.fillText(p.nombre, x + 11, y + 4);
+  }
+
+  if (!pos) return;
+  const fuera = !dentroDelMapa(pos.lat, pos.lon);
+  let [x,y] = aPixel(pos.lat, pos.lon);
+  if (fuera){
+    x = Math.max(recto.x + 9, Math.min(recto.x + recto.w - 9, x));
+    y = Math.max(recto.y + 9, Math.min(recto.y + recto.h - 9, y));
+  }
+  gH.beginPath(); gH.arc(x,y,7.5,0,7);
+  gH.strokeStyle = "#0d151d"; gH.lineWidth = 2.5;
+  if (fuera){ gH.stroke(); gH.strokeStyle = "#f2b134"; gH.lineWidth = 1.6; gH.stroke(); }
+  else { gH.fillStyle = "#f2b134"; gH.fill(); gH.stroke(); }
 }
 
 function claveAzar(){
@@ -782,19 +999,46 @@ function claveAzar(){
     .map(b => b.toString(16).padStart(2,"0")).join("");
 }
 
+/* Sale agrupado por capítulo para poder pegarlo directamente en el sitio que
+   toca, y con los que no caen en ningún recuadro apartados y en mayúsculas:
+   ese es justo el fallo que no quieres descubrir en el pueblo. */
 function pintarSalida(){
   const s = document.getElementById("aSalida");
-  if (!puntos.length){ s.textContent = "Sin puntos marcados todavía."; return; }
-  s.textContent = puntos.map(p =>
-    `{ k:"${p.k}", nombre:"${p.nombre}", lat:${p.lat}, lon:${p.lon}, medalla:"⭐",\n  pista:"" },`
-  ).join("\n") + "\n\n— URLs para grabar en las etiquetas —\n" +
-  puntos.map(p => `${p.nombre}\n${location.origin}${location.pathname}?k=${p.k}`).join("\n\n");
+  const alerta = document.getElementById("aAlerta");
+
+  if (!puntos.length){
+    s.textContent = "Sin puntos marcados todavía.";
+    alerta.hidden = true;
+    return;
+  }
+
+  const linea = p =>
+    `{ k:"${p.k}", nombre:"${p.nombre}", lat:${p.lat}, lon:${p.lon}, medalla:"⭐",\n  pista:"" },`;
+
+  const sueltos = puntos.filter(p => !capituloQueContiene(p.lat, p.lon));
+  alerta.hidden = !sueltos.length;
+  alerta.textContent = sueltos.length === 1
+    ? `«${sueltos[0].nombre}» cae fuera de todos los recuadros: en el juego no se vería.`
+    : `${sueltos.length} puntos caen fuera de todos los recuadros: en el juego no se verían.`;
+
+  let txt = "";
+  for (const c of CAPS){
+    const suyos = puntos.filter(p => capituloQueContiene(p.lat, p.lon) === c);
+    if (suyos.length) txt += `— ${c.nombre} (${c.id}) —\n` + suyos.map(linea).join("\n") + "\n\n";
+  }
+  if (sueltos.length)
+    txt += "— FUERA DE TODOS LOS MAPAS —\n" + sueltos.map(linea).join("\n") + "\n\n";
+
+  s.textContent = txt + "— URLs para grabar en las etiquetas —\n" +
+    puntos.map(p => `${p.nombre}\n${location.origin}${location.pathname}?k=${p.k}`).join("\n\n");
 }
 
 if (esAutor){
+  document.body.classList.add("autor");
   document.getElementById("autor").hidden = false;
   document.getElementById("capaInicio").hidden = true;
   pintarSalida();
+  requestAnimationFrame(fotogramaAutor);
 
   document.getElementById("aMarcar").onclick = () => {
     if (!pos) return alert("Todavía no hay posición.");
@@ -835,8 +1079,16 @@ if (esAutor){
    ══════════════════════════════════════════════════════════════ */
 let demoJugando = true, demoVelocidad = 4, demoTramo = 0, demoT = 0, demoPausa = 0;
 
+/* Por cada capítulo: su punto de inicio y sus estaciones. El tramo que une un
+   capítulo con el siguiente no se camina — es más de un kilómetro de carretera
+   fuera de los dos mapas — se salta, que es lo que harán ellos en coche. */
 function rutaDemo(){
-  return [CONFIG.inicioDemo, ...CONFIG.estaciones.map(e => [e.lat, e.lon])];
+  const r = [];
+  CAPS.forEach((cap, i) => {
+    r.push({ p:cap.inicioDemo, salto:i > 0 });
+    for (const e of cap.estaciones) r.push({ p:[e.lat, e.lon], est:e });
+  });
+  return r;
 }
 
 function pasoDemo(){
@@ -848,17 +1100,23 @@ function pasoDemo(){
   const ruta = rutaDemo();
   if (demoTramo >= ruta.length - 1) return;
 
-  const [la0, lo0] = ruta[demoTramo], [la1, lo1] = ruta[demoTramo + 1];
+  const destino = ruta[demoTramo + 1];
+  if (destino.salto){
+    demoTramo++; demoT = 0;
+    pos = null;        // que el suavizado no interpole entre los dos mapas
+    return;
+  }
+
+  const [la0, lo0] = ruta[demoTramo].p, [la1, lo1] = destino.p;
   const metros = distancia(la0, lo0, la1, lo1);
   demoT += (1.4 * demoVelocidad * 0.25) / metros;   // 1,4 m/s es andar normal
 
   if (demoT >= 1){
     demoT = 0;
-    const est = CONFIG.estaciones[demoTramo];
     demoTramo++;
-    if (est){
+    if (destino.est){
       demoPausa = 12;                                // se paran a "buscar"
-      setTimeout(() => desbloquear(est), 900);
+      setTimeout(() => desbloquear(destino.est), 900);
     }
     return;
   }
@@ -898,6 +1156,8 @@ function montarDemo(){
     demoTramo = 0; demoT = 0; demoPausa = 0; pos = null;
     yaAvisado = false; dentroSeguidas = 0;
     document.getElementById("capaLogro").hidden = true;
+    document.getElementById("capaTraslado").hidden = true;
+    aplicarCapitulo(CAPS[0]);
     pintarNiebla(); pintarMedallero(); mostrarPista();
   };
 
@@ -911,7 +1171,7 @@ document.getElementById("nombrePueblo").textContent = CONFIG.pueblo;
 document.title = "Expedición · " + CONFIG.pueblo;
 imgMapa.onload  = () => dimensionar();
 imgMapa.onerror = () => { imgMapa.style.display = "none"; dimensionar(); };
-imgMapa.src = CONFIG.mapa;
+aplicarCapitulo(capituloActivo());   // el mapa que toque según lo ya abierto
 
 window.addEventListener("resize", dimensionar);
 if (window.visualViewport) visualViewport.addEventListener("resize", dimensionar);
@@ -930,7 +1190,14 @@ function arrancarSeguimiento(){
 
 document.getElementById("btnSeguir").onclick = () => {
   abrirAudio();                     // el toque cuenta como gesto: habilita el sonido
-  document.getElementById("capaLogro").hidden = true;
+  seguirDespuesDelLogro();
+  arrancarSeguimiento();
+};
+
+document.getElementById("btnTraslado").onclick = () => {
+  abrirAudio();
+  document.getElementById("capaTraslado").hidden = true;
+  aplicarCapitulo(capituloActivo());
   mostrarPista();
   arrancarSeguimiento();
 };

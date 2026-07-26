@@ -55,16 +55,44 @@ def servir():
 
 
 def leer_config():
-    """Saca el bloque CONFIG del HTML sin ejecutar la página."""
+    """Saca los capítulos del bloque CONFIG sin ejecutar la página.
+
+    Trocea por el `id:` que abre cada capítulo, así que ese campo tiene que ir
+    primero. Devuelve la lista en orden de juego."""
     txt = (RAIZ / "index.html").read_text(encoding="utf-8")
     ini = txt.index("const CONFIG = {")
     fin = txt.index("\n};", ini)
     cuerpo = txt[ini:fin]
-    esq = re.search(r"esquinas:\s*\{([^}]+)\}", cuerpo).group(1)
-    nums = dict(re.findall(r"(\w+)\s*:\s*(-?[\d.]+)", esq))
-    ests = re.findall(r'k:"(\w+)".*?lat:\s*(-?[\d.]+),\s*lon:\s*(-?[\d.]+)', cuerpo)
-    return ({k: float(v) for k, v in nums.items()},
-            [(k, float(la), float(lo)) for k, la, lo in ests])
+
+    cortes = list(re.finditer(r'id:\s*"(\w+)"', cuerpo))
+    if not cortes:
+        sys.exit("No encuentro ningún capítulo con 'id' en el CONFIG.")
+
+    caps = []
+    for i, c in enumerate(cortes):
+        trozo = cuerpo[c.start(): cortes[i+1].start() if i+1 < len(cortes)
+                       else len(cuerpo)]
+        esq = re.search(r"esquinas:\s*\{([^}]+)\}", trozo)
+        if not esq:
+            sys.exit(f"El capítulo {c.group(1)} no tiene 'esquinas'.")
+        ini_demo = re.search(r"inicioDemo:\s*\[\s*(-?[\d.]+)\s*,\s*(-?[\d.]+)", trozo)
+        mapa = re.search(r'mapa:\s*"([^"]+)"', trozo)
+        caps.append({
+            "id": c.group(1),
+            "mapa": mapa.group(1) if mapa else None,
+            "esquinas": {k: float(v) for k, v in
+                         re.findall(r"(\w+)\s*:\s*(-?[\d.]+)", esq.group(1))},
+            "inicioDemo": (float(ini_demo.group(1)), float(ini_demo.group(2)))
+                          if ini_demo else None,
+            "estaciones": [(k, float(la), float(lo)) for k, la, lo in re.findall(
+                r'k:"(\w+)".*?lat:\s*(-?[\d.]+),\s*lon:\s*(-?[\d.]+)', trozo)],
+        })
+    return caps
+
+
+def dentro(esq, la, lo):
+    return (esq["sur"] <= la <= esq["norte"] and
+            esq["oeste"] <= lo <= esq["este"])
 
 
 def distancia(la1, lo1, la2, lo2):
@@ -97,28 +125,44 @@ def main():
     ap.add_argument("--ver", action="store_true", help="navegador visible")
     args = ap.parse_args()
 
-    esquinas, estaciones = leer_config()
+    caps = leer_config()
+    todas = [e for c in caps for e in c["estaciones"]]
     if args.capturas:
         (RAIZ / "capturas").mkdir(exist_ok=True)
 
-    print(f"\nCONFIG: {len(estaciones)} estaciones, recuadro "
-          f"{esquinas['sur']}..{esquinas['norte']} x "
-          f"{esquinas['oeste']}..{esquinas['este']}\n")
+    print(f"\nCONFIG: {len(caps)} capítulos, {len(todas)} estaciones")
+    for c in caps:
+        e = c["esquinas"]
+        print(f"  {c['id']}: {len(c['estaciones'])} estaciones, recuadro "
+              f"{e['sur']}..{e['norte']} x {e['oeste']}..{e['este']}")
+    print()
 
     # ── 0 · el config tiene que ser coherente consigo mismo ──────────────
     print("Configuración")
-    for k, la, lo in estaciones:
-        dentro = (esquinas["sur"] <= la <= esquinas["norte"] and
-                  esquinas["oeste"] <= lo <= esquinas["este"])
-        comprobar(dentro, f"la estación {k} cae dentro del mapa",
-                  f"{la}, {lo} está fuera del recuadro")
-    comprobar(len({k for k, _, _ in estaciones}) == len(estaciones),
+    for c in caps:
+        for k, la, lo in c["estaciones"]:
+            comprobar(dentro(c["esquinas"], la, lo),
+                      f"la estación {k} cae dentro del mapa de {c['id']}",
+                      f"{la}, {lo} está fuera del recuadro")
+        comprobar(bool(c["estaciones"]),
+                  f"el capítulo {c['id']} tiene alguna estación")
+        # Si el arranque de la demo cae fuera, la demo empieza en un mapa que
+        # no se ve y parece que está rota.
+        comprobar(c["inicioDemo"] is not None and
+                  dentro(c["esquinas"], *c["inicioDemo"]),
+                  f"el arranque de la demo de {c['id']} cae dentro de su mapa",
+                  str(c["inicioDemo"]))
+    comprobar(len({k for k, _, _ in todas}) == len(todas),
               "no hay dos estaciones con la misma clave")
+    mapas = [c["mapa"] for c in caps]
+    comprobar(all(mapas) and len(set(mapas)) == len(mapas),
+              "cada capítulo tiene su propia imagen de mapa", str(mapas))
 
     srv = servir()
+    esquinas = caps[0]["esquinas"]
     origen = (esquinas["sur"] + (esquinas["norte"] - esquinas["sur"]) * 0.25,
               esquinas["oeste"] + (esquinas["este"] - esquinas["oeste"]) * 0.25)
-    primera = estaciones[0]
+    primera = todas[0]
 
     with sync_playwright() as p:
         nav = p.chromium.launch(headless=not args.ver)
@@ -213,7 +257,7 @@ def main():
         comprobar(pg.is_hidden("#capaLogro"), "el botón Seguir cierra la medalla")
         captura("4-siguiente")
 
-        if len(estaciones) > 1:
+        if len(todas) > 1:
             comprobar("2 DE" in pg.inner_text("#pistaTitulo").upper(),
                       "pasa a la pista siguiente",
                       pg.inner_text("#pistaTitulo"))
@@ -226,8 +270,8 @@ def main():
                   "una etiqueta repetida avisa en vez de contar dos veces",
                   pg.inner_text("#logroNombre"))
 
-        if len(estaciones) > 2:
-            pg.goto(f"{BASE}?k={estaciones[2][0]}")
+        if len(todas) > 2:
+            pg.goto(f"{BASE}?k={todas[2][0]}")
             pg.wait_for_timeout(600)
             comprobar("TODAVÍA" in pg.inner_text("#logroNombre").upper(),
                       "una etiqueta adelantada no rompe el orden",
@@ -238,32 +282,78 @@ def main():
         comprobar(pg.is_hidden("#capaLogro"),
                   "una clave inventada no desbloquea nada")
 
-        # ── 6 · terminar la yincana ─────────────────────────────────────
+        # ── 6 · cambio de capítulo ──────────────────────────────────────
+        if len(caps) > 1:
+            print("\nCapítulos")
+            ultima = caps[0]["estaciones"][-1][0]
+            pg.goto(f"{BASE}?k={ultima}")
+            pg.wait_for_timeout(900)
+            comprobar(pg.evaluate("capPintado.id") == caps[0]["id"],
+                      "la última medalla no cambia el mapa por detrás",
+                      pg.evaluate("capPintado.id"))
+
+            pg.click("#btnSeguir")
+            pg.wait_for_timeout(500)
+            comprobar(not pg.is_hidden("#capaTraslado"),
+                      "al acabar el capítulo avisa del traslado")
+            comprobar(pg.evaluate("capPintado.id") == caps[0]["id"],
+                      "y espera a que pulsen para cambiar de mapa")
+            captura("5-traslado")
+
+            pg.click("#btnTraslado")
+            pg.wait_for_timeout(700)
+            comprobar(pg.evaluate("capPintado.id") == caps[1]["id"],
+                      "al pulsar se abre el mapa del capítulo siguiente",
+                      pg.evaluate("capPintado.id"))
+            comprobar(pg.is_hidden("#capaTraslado"),
+                      "la pantalla de traslado se quita")
+            comprobar(pg.evaluate("E.norte") == caps[1]["esquinas"]["norte"],
+                      "la proyección pasa a las esquinas del capítulo nuevo",
+                      str(pg.evaluate("E.norte")))
+
+            # Lo que más fácil se rompe al partir el mapa: que las pisadas del
+            # capítulo anterior abran agujeros en el del siguiente, que está a
+            # más de un kilómetro.
+            claros = pg.evaluate("""() => {
+                const c = document.getElementById('niebla');
+                const d = c.getContext('2d').getImageData(0,0,c.width,c.height).data;
+                let n = 0;
+                for (let i = 3; i < d.length; i += 4) if (d[i] < 40) n++;
+                return n;
+            }""")
+            comprobar(claros == 0,
+                      "el mapa nuevo empieza con la niebla entera",
+                      f"{claros} píxeles ya despejados")
+
+        # ── 7 · terminar la yincana ─────────────────────────────────────
         print("\nFinal")
-        for k, _, _ in estaciones[1:]:
+        for k, _, _ in todas[1:]:
             pg.goto(f"{BASE}?k={k}")
             pg.wait_for_timeout(500)
             if not pg.is_hidden("#capaLogro"):
                 pg.click("#btnSeguir")
                 pg.wait_for_timeout(300)
+            if not pg.is_hidden("#capaTraslado"):
+                pg.click("#btnTraslado")
+                pg.wait_for_timeout(300)
         abiertas = pg.evaluate(
             "JSON.parse(localStorage.getItem('yincana.v1')).abiertas")
-        comprobar(len(abiertas) == len(estaciones),
+        comprobar(len(abiertas) == len(todas),
                   "se pueden abrir todas las estaciones",
-                  f"{len(abiertas)} de {len(estaciones)}")
+                  f"{len(abiertas)} de {len(todas)}")
         comprobar(pg.inner_text("#dist").strip() == "✓",
                   "el instrumento marca expedición completa",
                   pg.inner_text("#dist"))
         captura("5-final")
 
-        # ── 7 · reinicio ────────────────────────────────────────────────
+        # ── 8 · reinicio ────────────────────────────────────────────────
         pg.goto(f"{BASE}?reset")
         pg.wait_for_timeout(500)
         est = pg.evaluate("JSON.parse(localStorage.getItem('yincana.v1'))")
         comprobar(est["abiertas"] == [] and est["rastro"] == [],
                   "?reset deja la partida a cero", json.dumps(est)[:60])
 
-        # ── 8 · modo autor ──────────────────────────────────────────────
+        # ── 9 · modo autor ──────────────────────────────────────────────
         print("\nModo autor")
         pg.goto(f"{BASE}?modo=autor")
         pg.wait_for_timeout(900)
@@ -278,9 +368,38 @@ def main():
         comprobar(re.search(r'k:"[0-9a-f]{6}"', salida) is not None,
                   "genera una clave aleatoria de 6 dígitos hex")
         comprobar("?k=" in salida, "incluye la URL para grabar en la etiqueta")
+
+        # Lo que deja salir a marcar: ver el punto sobre el mapa en vez de
+        # fiarse de seis decimales.
+        comprobar(pg.is_hidden("footer"), "el panel deja sitio al mapa")
+        comprobar(pg.is_hidden("#niebla"), "en modo autor el mapa se ve sin niebla")
+        alfa_punto = pg.evaluate("""() => {
+            const p = JSON.parse(localStorage.getItem('yincana.autor')).slice(-1)[0];
+            const [x, y] = aPixel(p.lat, p.lon);
+            const g = document.getElementById('hud').getContext('2d');
+            return g.getImageData(Math.round(x*dpr), Math.round(y*dpr), 1, 1).data[3];
+        }""")
+        comprobar(alfa_punto > 200, "el punto marcado se dibuja sobre el mapa",
+                  f"alfa={alfa_punto}")
         captura("6-autor")
 
-        # ── 9 · modo demo ───────────────────────────────────────────────
+        # Y el aviso: un punto fuera de todos los recuadros no se vería en el
+        # juego, y eso no puedes descubrirlo con los críos delante.
+        lejos = (min(c["esquinas"]["sur"] for c in caps) - 0.02,
+                 min(c["esquinas"]["oeste"] for c in caps) - 0.02)
+        for _ in range(3):
+            ctx.set_geolocation({"latitude": lejos[0], "longitude": lejos[1],
+                                 "accuracy": 8})
+            pg.wait_for_timeout(350)
+        pg.fill("#aNombre", "Punto perdido")
+        pg.click("#aMarcar")
+        pg.wait_for_timeout(400)
+        comprobar(not pg.is_hidden("#aAlerta"),
+                  "avisa de que un punto cae fuera de todos los recuadros")
+        comprobar("FUERA DE TODOS LOS MAPAS" in pg.inner_text("#aSalida"),
+                  "y lo aparta en la salida para que no pase inadvertido")
+
+        # ── 10 · modo demo ──────────────────────────────────────────────
         # Tiene que funcionar sin permiso de geolocalización: es su motivo de
         # existir, poder enseñarlo en un portátil.
         print("\nModo demo")
@@ -325,7 +444,7 @@ def main():
                   "; ".join(err2[:2]))
         ctx2.close()
 
-        # ── 10 · sin errores por el camino ──────────────────────────────
+        # ── 11 · sin errores por el camino ──────────────────────────────
         print("\nConsola")
         comprobar(not errores, "ningún error de JavaScript", "; ".join(errores[:3]))
 

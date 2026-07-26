@@ -12,10 +12,10 @@ explicarle qué es Web Mercator ni qué es el RSSI.
 ## Órdenes
 
 ```bash
-python3 pruebas.py               # 39 comprobaciones con GPS simulado
+python3 pruebas.py               # 56 comprobaciones con GPS simulado
 python3 pruebas.py --capturas    # además deja pantallazos en capturas/
 python3 pruebas.py --ver         # con navegador visible, para depurar
-python3 mapa.py <sur> <oeste> <norte> <este>   # genera mapa.jpg + esquinas
+python3 mapa.py <sur> <oeste> <norte> <este> --salida <archivo>   # imagen + esquinas
 python3 -m http.server 8000      # servidor local
 ```
 
@@ -41,7 +41,8 @@ configurable está en el bloque `CONFIG` de arriba del todo.
 - `mapa.py` — descarga teselas de OSM, las cose, y calcula las esquinas
 - `pruebas.py` — simulador de recorrido
 - `LEEME.md` — guía de montaje para Iyán
-- `mapa.jpg` — no está en el repo todavía; lo genera `mapa.py`
+- `mapa-pueblo.jpg`, `mapa-regalina.jpg` — no están en el repo todavía; uno por
+  capítulo, los genera `mapa.py`
 
 ## Geografía de Cadavedo
 
@@ -53,14 +54,19 @@ Distancias reales entre los tres puntos con coordenadas públicas verificadas:
 | Núcleo → La Regalina | 1 196 m |
 | Apeadero → La Regalina | 1 985 m |
 
-**Esto es una tensión de diseño sin resolver.** Con el recuadro entero
-(1934 × 1557 m) cada pisada despeja el 0,13 % del mapa: caminan mucho y no ven
-casi nada abrirse. Ciñéndolo al casco (645 × 723 m) sube al 0,83 %, seis veces
-más, pero se queda fuera La Regalina, que es el sitio bonito.
+**Resuelto partiéndolo en capítulos**, un mapa por zona. En un solo recuadro
+(1934 × 1557 m) cada pisada despejaba el 0,13 %: caminaban mucho y no veían
+abrirse casi nada. Ahora son dos:
 
-El `CONFIG` actual lleva el recuadro ancho **a propósito, para que la demo
-enseñe toda la geografía**. Para jugar de verdad hay que decidir: ver la tarea
-del tamaño del mapa en `ARRANQUE.md`.
+| | | |
+|---|---|---|
+| `pueblo` | 923 × 597 m | 0,70 % por pisada |
+| `regalina` | 400 × 404 m | 2,38 % por pisada |
+
+El capítulo activo **se deduce de `estado.abiertas`**, no se guarda: la primera
+estación sin abrir manda. Eso lo hace idempotente frente a las recargas por
+etiqueta, que es la razón de montarlo así y no con un `CONFIG` por capítulo.
+Las etiquetas apuntan todas a la misma URL.
 
 Las coordenadas de las estaciones salen de OpenStreetMap y de fuentes
 públicas. Valen para la demo. **No valen para jugar**: apuntan al sitio
@@ -117,6 +123,16 @@ puede disparar la alarma. `dentroSeguidas` lleva la cuenta.
 
 **El rastro se diezma a 10 m.** Guardar cada lectura llenaría `localStorage` y
 haría lento el repintado de la niebla.
+
+**El rastro es uno solo para toda la yincana, y los mapas son varios.** Se
+guarda entero, pero al pintar hay que filtrarlo con `dentroDelMapa()`: sin eso,
+las pisadas del pueblo abren agujeros en el mapa de La Regalina, que está a
+1,2 km. Hay una comprobación que cuenta píxeles despejados justo después de
+cambiar de capítulo y exige cero.
+
+**El mapa no cambia detrás de la medalla.** Al abrir la última estación de un
+capítulo, primero sale la pantalla de traslado y sólo al pulsar se cambia. Si no,
+cierran la medalla y aparece un mapa desconocido sin explicación.
 
 **Sube `VERSION` en `sw.js` al editar `index.html`.** Si no, los móviles siguen
 sirviendo la copia vieja y te vuelves loco.
