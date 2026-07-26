@@ -74,9 +74,10 @@ class Contenido(unittest.TestCase):
         self.assertIsNone(servidor.contenido_actual(self.c))
 
     def test_rechaza_contenido_invalido(self):
+        # En v2 las 'esquinas' ya no se exigen (mapa vivo); sí una lista de
+        # estaciones por capítulo.
         for malo in [None, {}, {"capitulos": []},
-                     {"capitulos": [{"estaciones": []}]},          # sin esquinas
-                     {"capitulos": [{"esquinas": {}}]}]:           # sin estaciones
+                     {"capitulos": [{"nombre": "x"}]}]:   # capítulo sin estaciones
             with self.assertRaises(ValueError):
                 servidor.publicar_contenido(self.c, malo)
 
@@ -122,6 +123,45 @@ class Progreso(unittest.TestCase):
         p = servidor.leer_progreso(self.c, self.t)
         self.assertEqual(p["abiertas"], [])
         self.assertEqual(p["rastro"], [])
+
+
+class Estaciones(unittest.TestCase):
+    def setUp(self):
+        self.c = bd_memoria()
+
+    def tearDown(self):
+        self.c.close()
+
+    def test_colocar_crea_y_actualiza(self):
+        servidor.colocar_estacion(self.c, "k1", 43.5, -6.3)
+        est = servidor.listar_estaciones(self.c)
+        self.assertEqual(len(est), 1)
+        self.assertEqual(est[0]["lat"], 43.5)
+        # recolocar mueve la posición
+        servidor.colocar_estacion(self.c, "k1", 43.6, -6.4)
+        self.assertEqual(servidor.listar_estaciones(self.c)[0]["lat"], 43.6)
+
+    def test_guardar_metadatos_no_borra_posicion(self):
+        servidor.colocar_estacion(self.c, "k1", 43.5, -6.3)
+        servidor.guardar_estacion(self.c, {"k": "k1", "nombre": "El faro"})
+        e = servidor.listar_estaciones(self.c)[0]
+        self.assertEqual(e["nombre"], "El faro")
+        self.assertEqual(e["lat"], 43.5)   # la ubicación se conserva
+
+    def test_contenido_solo_lleva_las_colocadas(self):
+        servidor.guardar_estacion(self.c, {"k": "sin", "nombre": "sin colocar"})
+        servidor.colocar_estacion(self.c, "con", 43.5, -6.3)
+        est = servidor.contenido_para_cliente(self.c)["capitulos"][0]["estaciones"]
+        self.assertEqual([e["k"] for e in est], ["con"])
+
+    def test_borrar(self):
+        servidor.colocar_estacion(self.c, "k1", 43.5, -6.3)
+        servidor.borrar_estacion(self.c, "k1")
+        self.assertEqual(servidor.listar_estaciones(self.c), [])
+
+    def test_colocar_sin_coords_falla(self):
+        with self.assertRaises(ValueError):
+            servidor.colocar_estacion(self.c, "k1", None, None)
 
 
 class HTTP(unittest.TestCase):
@@ -203,9 +243,11 @@ class HTTP(unittest.TestCase):
         con.close()
         return r.status, ct, cuerpo
 
-    def test_contenido_sin_publicar_da_404(self):
-        code, _ = self.pedir("GET", "/api/contenido")
-        self.assertEqual(code, 404)
+    def test_contenido_sin_estaciones(self):
+        # /api/contenido siempre compone algo (metadatos + estaciones colocadas).
+        code, r = self.pedir("GET", "/api/contenido")
+        self.assertEqual(code, 200)
+        self.assertEqual(r["capitulos"][0]["estaciones"], [])
 
     def test_login_crio_sin_pin(self):
         code, body, cookie = self.login("himilce")
@@ -266,6 +308,34 @@ class HTTP(unittest.TestCase):
         code, r = self.pedir("GET", "/api/contenido")
         self.assertEqual(code, 200)
         self.assertEqual(r["pueblo"], "Cadavedo")
+
+    def test_provision_de_estaciones(self):
+        _, _, admin = self.login("admin", "1234")
+        _, _, crio = self.login("himilce")
+        # colocar (crea la estación con su GPS)
+        code, r = self.pedir("POST", "/api/estacion/colocar",
+                             {"k": "t1", "lat": 43.545, "lon": -6.389}, cookie=admin)
+        self.assertEqual(code, 200)
+        self.assertEqual(len(r["estaciones"]), 1)
+        # aparece en el contenido del jugador, con sus coordenadas de campo
+        _, cont = self.pedir("GET", "/api/contenido")
+        est = cont["capitulos"][0]["estaciones"]
+        self.assertEqual(est[0]["k"], "t1")
+        self.assertEqual(est[0]["lat"], 43.545)
+        # editar metadatos
+        self.pedir("POST", "/api/estaciones",
+                   {"k": "t1", "nombre": "El lavadero", "pista": "junto al río"},
+                   cookie=admin)
+        _, cont = self.pedir("GET", "/api/contenido")
+        self.assertEqual(cont["capitulos"][0]["estaciones"][0]["nombre"], "El lavadero")
+        # borrar
+        self.pedir("POST", "/api/estacion/borrar", {"k": "t1"}, cookie=admin)
+        _, r = self.pedir("GET", "/api/estaciones", cookie=admin)
+        self.assertEqual(r["estaciones"], [])
+        # un crío no puede colocar ni listar
+        self.assertEqual(self.pedir("POST", "/api/estacion/colocar",
+                         {"k": "x", "lat": 1, "lon": 1}, cookie=crio)[0], 403)
+        self.assertEqual(self.pedir("GET", "/api/estaciones", cookie=crio)[0], 403)
 
     def test_sirve_el_estatico(self):
         code, _ = self.pedir("GET", "/index.html")

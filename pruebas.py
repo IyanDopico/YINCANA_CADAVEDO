@@ -672,6 +672,10 @@ def main():
                 # marca reconocible: si aparece, el contenido del servidor se aplicó
                 contenido["pueblo"] = "Cadavedo (servidor)"
                 servidor.publicar_contenido(c, contenido)
+                # coloca las estaciones (con sus coords) para que el contenido
+                # compuesto las lleve: el cliente sólo lo aplica si hay estaciones
+                for k, la, lo in todas:
+                    servidor.colocar_estacion(c, k, la, lo)
                 # progreso de himilce ya en el servidor, para probar el retomar
                 servidor.fusionar_progreso(c, "himilce", {"abiertas": [todas[0][0]]})
 
@@ -756,11 +760,37 @@ def main():
                 body: JSON.stringify({usuario:'admin', pin:'0000'})})).status""")
             comprobar(code_malo == 403, "admin con PIN incorrecto no entra",
                       str(code_malo))
-
-            comprobar(not err3 and not err4,
-                      "el cliente con servidor no suelta errores de JavaScript",
-                      "; ".join((err3 + err4)[:2]))
             ctx4.close()
+
+            # 15c · el admin coloca una etiqueta escaneándola (captura su GPS)
+            ctx5 = nav.new_context(
+                viewport={"width": 390, "height": 844}, device_scale_factor=2,
+                is_mobile=True, has_touch=True, permissions=["geolocation"],
+                geolocation={"latitude": origen[0], "longitude": origen[1],
+                             "accuracy": 8})
+            teselas_falsas(ctx5)
+            pg5 = ctx5.new_page()
+            err5 = []
+            pg5.on("pageerror", lambda e: err5.append(str(e)))
+            pg5.goto(api_url); pg5.wait_for_timeout(700)
+            pg5.click('.quien[data-u="admin"]'); pg5.wait_for_timeout(200)
+            pg5.fill("#pinInput", "1234"); pg5.click("#pinEntrar")
+            pg5.wait_for_timeout(1800)   # login + recarga
+            pg5.goto(f"{api_url}?k=prov1"); pg5.wait_for_timeout(1500)
+            comprobar(not pg5.is_hidden("#colocar"),
+                      "el admin, al escanear una etiqueta, entra en modo colocar")
+            pg5.click("#colocarGuardar"); pg5.wait_for_timeout(1300)
+            with contextlib.closing(servidor.conectar()) as c:
+                est = servidor.listar_estaciones(c)
+            colocada = [e for e in est if e["k"] == "prov1" and e["lat"] is not None]
+            comprobar(len(colocada) == 1,
+                      "guardar coloca la etiqueta con su GPS en el servidor",
+                      str([e["k"] for e in est]))
+            ctx5.close()
+
+            comprobar(not err3 and not err4 and not err5,
+                      "el cliente con servidor no suelta errores de JavaScript",
+                      "; ".join((err3 + err4 + err5)[:2]))
             api.shutdown(); api.server_close()
         finally:
             servidor.BD = bd_orig

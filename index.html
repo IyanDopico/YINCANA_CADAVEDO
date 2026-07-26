@@ -62,6 +62,12 @@ header{
   color:var(--hueso); display:block; margin-top:2px; letter-spacing:.04em;
 }
 .medallero{display:flex; gap:6px; align-items:center; flex-shrink:0}
+#btnAdmin{
+  margin-left:10px; background:transparent; border:1px solid var(--tinta);
+  color:var(--hueso-tenue); border-radius:8px; font-size:15px;
+  width:32px; height:32px; cursor:pointer; touch-action:manipulation;
+}
+#btnAdmin[hidden]{display:none}
 .punto{
   width:9px; height:9px; border-radius:50%;
   border:1.5px solid var(--tinta); background:transparent;
@@ -329,6 +335,7 @@ body.autor #niebla{display:none}
     <span class="pueblo" id="nombrePueblo">—</span>
   </div>
   <div class="medallero" id="medallero"></div>
+  <button id="btnAdmin" hidden aria-label="Panel de estaciones">⚙</button>
 </header>
 
 <div id="lienzos">
@@ -362,6 +369,16 @@ body.autor #niebla{display:none}
     </div>
     <p class="alerta" id="loginErr" hidden></p>
   </div>
+</div>
+
+<!-- Colocar etiqueta (admin): captura la posición GPS de la etiqueta escaneada -->
+<div class="capa" id="colocar" hidden>
+  <span class="sello">Colocar etiqueta</span>
+  <h1 id="colocarK">—</h1>
+  <p id="colocarPrec">buscando señal…</p>
+  <p class="alerta" id="colocarErr" hidden></p>
+  <button class="boton" id="colocarGuardar">Guardar aquí</button>
+  <span class="enlace" id="colocarPanel">Ver el panel de estaciones</span>
 </div>
 
 <!-- Pantalla de arranque -->
@@ -537,7 +554,13 @@ function contenidoValido(c){
   return !!c && typeof c === "object" &&
     Array.isArray(c.capitulos) && c.capitulos.length > 0 &&
     c.capitulos.every(cap => cap && typeof cap === "object" &&
-      cap.esquinas && Array.isArray(cap.estaciones));
+      Array.isArray(cap.estaciones));
+}
+// Antes de que el admin coloque etiquetas, el servidor devuelve 0 estaciones:
+// en ese caso no se aplica (se sigue con el CONFIG integrado) para no dejar el
+// juego sin nada que buscar.
+function contenidoConEstaciones(c){
+  return contenidoValido(c) && c.capitulos.some(cap => cap.estaciones.length > 0);
 }
 
 /* Vuelca el contenido sobre el CONFIG (mutándolo, que el resto del código lee
@@ -553,7 +576,7 @@ derivar();   // arranca con la copia integrada
 if (!esDemo && !esAutor){
   try{
     const c = JSON.parse(localStorage.getItem(CLAVE_CONTENIDO) || "null");
-    if (contenidoValido(c)) aplicarContenido(c);
+    if (contenidoConEstaciones(c)) aplicarContenido(c);
   }catch(_){}
 }
 
@@ -567,7 +590,7 @@ async function refrescarContenido(){
     const r = await fetch("api/contenido", { cache:"no-store" });
     if (!r.ok) return;
     const c = await r.json();
-    if (contenidoValido(c))
+    if (contenidoConEstaciones(c))
       localStorage.setItem(CLAVE_CONTENIDO, JSON.stringify(c));
   }catch(_){}
 }
@@ -660,6 +683,137 @@ async function iniciarSesion(u, pin){
   usuario = (await r.json()).usuario;
   try{ localStorage.setItem(CLAVE_USUARIO, usuario); }catch(_){}
   return usuario;
+}
+
+/* ══════════════════════════════════════════════════════════════
+   1d · ADMIN: provisión de etiquetas en campo y panel de estaciones
+   Cuando el admin escanea una etiqueta (?k=), en vez de desbloquearla se coloca:
+   se captura la posición GPS y se guarda como ubicación de esa estación. El
+   panel sirve para nombrarlas, ordenarlas y ver la URL a grabar.
+   ══════════════════════════════════════════════════════════════ */
+let posProv = null;   // última lectura GPS en modo colocación
+function provisionarEtiqueta(k){
+  history.replaceState(null, "", location.pathname);
+  document.getElementById("capaInicio").hidden = true;
+  document.getElementById("colocarK").textContent = "Etiqueta " + k;
+  document.getElementById("colocar").hidden = false;
+  mantenerPantalla();
+  navigator.geolocation.watchPosition(p => {
+    posProv = p.coords;
+    const pr = Math.round(p.coords.accuracy);
+    document.getElementById("colocarPrec").textContent =
+      "Precisión ±" + pr + " m" + (pr > 15 ? " · espera a que baje de 15" : " · ya puedes guardar");
+  }, () => {}, { enableHighAccuracy:true, maximumAge:0, timeout:20000 });
+
+  document.getElementById("colocarGuardar").onclick = async () => {
+    const err = document.getElementById("colocarErr"); err.hidden = true;
+    if (!posProv){ err.textContent = "Todavía no hay señal GPS."; err.hidden = false; return; }
+    try{
+      const r = await fetch("api/estacion/colocar", {
+        method:"POST", headers:{ "Content-Type":"application/json" },
+        body: JSON.stringify({ k, lat:+posProv.latitude.toFixed(6),
+                                  lon:+posProv.longitude.toFixed(6) }),
+      });
+      if (!r.ok) throw new Error("No se pudo guardar (¿sesión de admin?)");
+      document.getElementById("colocar").hidden = true;
+      mostrarPanelAdmin(k);   // al panel, para nombrarla
+    }catch(e){ err.textContent = e.message; err.hidden = false; }
+  };
+  document.getElementById("colocarPanel").onclick = () => {
+    document.getElementById("colocar").hidden = true; mostrarPanelAdmin();
+  };
+}
+
+/* Panel de estaciones (reutiliza el contenedor #autor como panel inferior). */
+async function mostrarPanelAdmin(resaltar){
+  const panel = document.getElementById("autor");
+  document.body.classList.add("autor");
+  panel.hidden = false;
+  panel.innerHTML = "<h2>Estaciones</h2><p class='aviso'>Cargando…</p>";
+  let lista = [];
+  try{
+    const r = await fetch("api/estaciones", { cache:"no-store" });
+    if (r.ok) lista = (await r.json()).estaciones || [];
+  }catch(_){}
+  panel.innerHTML = "";
+  const h = document.createElement("h2"); h.textContent = "Estaciones";
+  const aviso = document.createElement("p"); aviso.className = "aviso";
+  aviso.textContent = "Coloca cada etiqueta escaneándola en su sitio. Aquí la "
+    + "nombras, pones su pista y la ordenas.";
+  const fila = document.createElement("div"); fila.className = "fila";
+  const bNueva = document.createElement("button");
+  bNueva.className = "boton"; bNueva.textContent = "Nueva etiqueta";
+  const bCerrar = document.createElement("button");
+  bCerrar.className = "boton hueco"; bCerrar.textContent = "Cerrar";
+  fila.append(bNueva, bCerrar);
+  panel.append(h, aviso, fila);
+  bCerrar.onclick = () => { panel.hidden = true; document.body.classList.remove("autor"); };
+
+  bNueva.onclick = async () => {
+    const k = Array.from(crypto.getRandomValues(new Uint8Array(3)))
+      .map(b => b.toString(16).padStart(2, "0")).join("");
+    await fetch("api/estaciones", {
+      method:"POST", headers:{ "Content-Type":"application/json" },
+      body: JSON.stringify({ k, nombre:"Estación " + (lista.length + 1),
+                             orden: lista.length + 1 }),
+    }).catch(()=>{});
+    mostrarPanelAdmin(k);
+  };
+
+  const base = location.origin + location.pathname;
+  if (!lista.length){
+    const p = document.createElement("p"); p.className = "aviso";
+    p.textContent = "Aún no hay etiquetas. Pulsa «Nueva etiqueta» para crear una "
+      + "y graba su URL, o escanea una etiqueta ya grabada para colocarla.";
+    panel.append(p);
+  }
+  for (const e of lista){
+    const it = document.createElement("div"); it.className = "item";
+    it.style.flexWrap = "wrap";
+    if (resaltar && e.k === resaltar) it.style.outline = "1px solid var(--caliente)";
+
+    const nombre = document.createElement("input");
+    nombre.value = e.nombre || ""; nombre.placeholder = "nombre";
+    nombre.style.flex = "1 1 40%";
+    const pista = document.createElement("input");
+    pista.value = e.pista || ""; pista.placeholder = "pista a la siguiente";
+    pista.style.flex = "1 1 100%";
+    const medalla = document.createElement("input");
+    medalla.value = e.medalla || ""; medalla.placeholder = "🌽"; medalla.maxLength = 4;
+    medalla.style.flex = "0 0 46px"; medalla.style.textAlign = "center";
+
+    const estado = document.createElement("small");
+    estado.textContent = (e.lat != null) ? "✓ colocada" : "· sin colocar";
+    estado.className = (e.lat != null) ? "bien" : "regular";
+
+    const guardar = document.createElement("button");
+    guardar.textContent = "✓"; guardar.setAttribute("aria-label", "Guardar");
+    guardar.onclick = async () => {
+      await fetch("api/estaciones", {
+        method:"POST", headers:{ "Content-Type":"application/json" },
+        body: JSON.stringify({ k:e.k, nombre:nombre.value, pista:pista.value,
+                               medalla:medalla.value, orden:e.orden }),
+      }).catch(()=>{});
+      guardar.textContent = "✓✓";
+    };
+    const borrar = document.createElement("button");
+    borrar.textContent = "✕"; borrar.setAttribute("aria-label", "Borrar");
+    borrar.onclick = async () => {
+      if (!confirm("¿Borrar «" + (e.nombre || e.k) + "»?")) return;
+      await fetch("api/estacion/borrar", {
+        method:"POST", headers:{ "Content-Type":"application/json" },
+        body: JSON.stringify({ k:e.k }),
+      }).catch(()=>{});
+      mostrarPanelAdmin();
+    };
+
+    const url = document.createElement("div");
+    url.style.cssText = "flex:1 1 100%; font-size:11px; color:var(--hueso-tenue); word-break:break-all";
+    url.textContent = base + "?k=" + e.k;
+
+    it.append(nombre, medalla, estado, guardar, borrar, pista, url);
+    panel.append(it);
+  }
 }
 
 // La demo guarda aparte para no pisar la partida de verdad.
@@ -1765,6 +1919,15 @@ if (esDemo){
    demo/autor, que no piden login). */
 function montarJuego(){
   dimensionar();
+  // El admin tiene el panel de estaciones y coloca etiquetas: escanear una
+  // (?k=) captura su GPS en vez de desbloquearla.
+  if (usuario === "admin"){
+    const bA = document.getElementById("btnAdmin");
+    bA.hidden = false;
+    bA.onclick = () => mostrarPanelAdmin();
+    const k = params.get("k");
+    if (k){ refrescarContenido(); provisionarEtiqueta(k); return; }
+  }
   pintarMedallero();
   mostrarPista();
   comprobarEtiqueta();

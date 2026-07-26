@@ -110,6 +110,16 @@ def crear_tablas(c):
             json        TEXT,
             publicado   REAL
         );
+        CREATE TABLE IF NOT EXISTS estaciones(
+            k        TEXT PRIMARY KEY,   -- la clave NFC (?k=)
+            nombre   TEXT,
+            pista    TEXT,               -- dónde está la SIGUIENTE
+            medalla  TEXT,
+            lat      REAL,               -- NULL hasta que se coloca en campo
+            lon      REAL,
+            orden    INTEGER,            -- orden de juego
+            colocada REAL                -- timestamp de la última captura GPS
+        );
         """
     )
     c.commit()
@@ -149,16 +159,15 @@ def _cookie_fuera():
 # ── Contenido ─────────────────────────────────────────────────────────
 def validar_contenido(obj):
     """Lo mínimo para que el cliente no se quede sin mapa. El resto lo sanea el
-    propio cliente antes de tocar nada (sanearContenido en index.html)."""
+    propio cliente antes de tocar nada (sanearContenido en index.html). En v2 el
+    mapa es vivo, así que ya no se exigen 'esquinas'."""
     if not isinstance(obj, dict):
         raise ValueError("el contenido tiene que ser un objeto JSON")
     caps = obj.get("capitulos")
     if not isinstance(caps, list) or not caps:
         raise ValueError("el contenido necesita una lista 'capitulos' no vacía")
     for i, cap in enumerate(caps):
-        if not isinstance(cap, dict) or "esquinas" not in cap:
-            raise ValueError(f"el capítulo {i} no tiene 'esquinas'")
-        if not isinstance(cap.get("estaciones"), list):
+        if not isinstance(cap, dict) or not isinstance(cap.get("estaciones"), list):
             raise ValueError(f"el capítulo {i} no tiene lista 'estaciones'")
     return obj
 
@@ -175,6 +184,82 @@ def contenido_actual(c):
     r = c.execute(
         "SELECT json FROM contenido ORDER BY version DESC LIMIT 1").fetchone()
     return json.loads(r["json"]) if r else None
+
+
+# ── Estaciones (colocadas en campo por el admin) ──────────────────────
+def listar_estaciones(c):
+    filas = c.execute(
+        "SELECT k, nombre, pista, medalla, lat, lon, orden, colocada "
+        "FROM estaciones ORDER BY orden IS NULL, orden, k").fetchall()
+    return [dict(f) for f in filas]
+
+
+def guardar_estacion(c, e):
+    """Alta o edición de metadatos (nombre, pista, medalla, orden). No toca la
+    ubicación: eso es cosa de colocar_estacion (captura de campo)."""
+    k = (e.get("k") or "").strip()
+    if not k:
+        raise ValueError("la estación necesita una clave 'k'")
+    c.execute(
+        """INSERT INTO estaciones(k, nombre, pista, medalla, orden)
+           VALUES(?,?,?,?,?)
+           ON CONFLICT(k) DO UPDATE SET
+             nombre=excluded.nombre, pista=excluded.pista,
+             medalla=excluded.medalla, orden=excluded.orden""",
+        (k, e.get("nombre"), e.get("pista"), e.get("medalla"), e.get("orden")))
+    c.commit()
+    return k
+
+
+def colocar_estacion(c, k, lat, lon):
+    """Guarda la posición GPS capturada. Da de alta la estación si es nueva, así
+    escanear una etiqueta desconocida como admin la registra sola."""
+    k = (k or "").strip()
+    if not k or not isinstance(lat, (int, float)) or not isinstance(lon, (int, float)):
+        raise ValueError("colocar necesita k, lat y lon")
+    c.execute(
+        """INSERT INTO estaciones(k, lat, lon, colocada) VALUES(?,?,?,?)
+           ON CONFLICT(k) DO UPDATE SET
+             lat=excluded.lat, lon=excluded.lon, colocada=excluded.colocada""",
+        (k, float(lat), float(lon), time.time()))
+    c.commit()
+
+
+def borrar_estacion(c, k):
+    c.execute("DELETE FROM estaciones WHERE k=?", ((k or "").strip(),))
+    c.commit()
+
+
+# Metadatos por defecto del contenido (si no se ha publicado nada). El cliente
+# también trae su CONFIG integrado como respaldo.
+CONTENIDO_DEFECTO = {
+    "pueblo": "Cadavedo", "radioNiebla": 35, "radioZona": 25, "radioAudio": 150,
+    "perdonarSiPasaronCerca": True,
+    "finalTitulo": "El tesoro es vuestro",
+    "finalTexto": "Habéis cruzado el pueblo de punta a punta. ¡El tesoro es vuestro!",
+}
+
+
+def contenido_para_cliente(c):
+    """Lo que ve el jugador: metadatos (del JSON publicado o por defecto) + las
+    estaciones colocadas en campo (con sus coordenadas reales) + los spawns."""
+    base = contenido_actual(c) or {}
+    meta = dict(CONTENIDO_DEFECTO)
+    for k in ("pueblo", "radioNiebla", "radioZona", "radioAudio",
+              "perdonarSiPasaronCerca", "finalTitulo", "finalTexto"):
+        if k in base:
+            meta[k] = base[k]
+    spawns = []
+    for cap in base.get("capitulos", []):
+        spawns += cap.get("spawns", [])
+    estaciones = [
+        {"k": e["k"], "nombre": e["nombre"] or "Estación", "pista": e["pista"] or "",
+         "medalla": e["medalla"] or "⭐", "lat": e["lat"], "lon": e["lon"]}
+        for e in listar_estaciones(c)
+        if e["lat"] is not None and e["lon"] is not None]
+    meta["capitulos"] = [{"id": "zona", "nombre": meta["pueblo"],
+                          "estaciones": estaciones, "spawns": spawns}]
+    return meta
 
 
 # ── Progreso ──────────────────────────────────────────────────────────
@@ -262,6 +347,9 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             return None
         with closing(conectar()) as c:
             return usuario_de_sesion(c, sid)
+
+    def _es_admin(self):
+        return self._usuario() == "admin"
 
     def _origen_ok(self):
         """Defensa CSRF para las escrituras. La cookie ya es SameSite=Lax (no
@@ -355,11 +443,14 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             return self._tesela(int(m[1]), int(m[2]), int(m[3]))
         if ruta == "/api/contenido":
             with closing(conectar()) as c:
-                obj = contenido_actual(c)
-            return self._json(obj, 200) if obj else self._json(
-                {"error": "sin contenido publicado"}, 404)
+                return self._json(contenido_para_cliente(c))
         if ruta == "/api/me":
             return self._json({"usuario": self._usuario()})
+        if ruta == "/api/estaciones":     # panel de admin: todas, con estado
+            if not self._es_admin():
+                return self._json({"error": "sólo admin"}, 403)
+            with closing(conectar()) as c:
+                return self._json({"estaciones": listar_estaciones(c)})
         if ruta == "/api/progreso":
             usuario = self._usuario()
             if not usuario:
@@ -400,6 +491,25 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 return self._json({"error": "sin sesión"}, 401)
             with closing(conectar()) as c:
                 return self._json(fusionar_progreso(c, usuario, self._cuerpo()))
+
+        # ── provisión de estaciones (sólo admin) ──
+        if ruta in ("/api/estaciones", "/api/estacion/colocar", "/api/estacion/borrar"):
+            if not self._origen_ok():
+                return self._json({"error": "origen no permitido"}, 403)
+            if not self._es_admin():
+                return self._json({"error": "sólo admin"}, 403)
+            d = self._cuerpo() or {}
+            try:
+                with closing(conectar()) as c:
+                    if ruta == "/api/estaciones":
+                        guardar_estacion(c, d)
+                    elif ruta == "/api/estacion/colocar":
+                        colocar_estacion(c, d.get("k"), d.get("lat"), d.get("lon"))
+                    else:
+                        borrar_estacion(c, d.get("k"))
+                    return self._json({"estaciones": listar_estaciones(c)})
+            except ValueError as e:
+                return self._json({"error": str(e)}, 400)
 
         self.send_error(404)
 
@@ -446,6 +556,18 @@ def cmd_jugadores():
                   f"{len(p['capturas'])} spawns, {len(p['rastro'])} pisadas")
 
 
+def cmd_estaciones():
+    with closing(conectar()) as c:
+        est = listar_estaciones(c)
+    if not est:
+        print("Sin estaciones. Colócalas escaneando cada etiqueta con la sesión "
+              "de admin (?k=<clave>).")
+        return
+    for e in est:
+        estado = "colocada" if e["lat"] is not None else "SIN COLOCAR"
+        print(f"  {e['k']:<10} {estado:<11} {e['nombre'] or '(sin nombre)'}")
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description="Servidor de la yincana")
     sub = ap.add_subparsers(dest="orden")
@@ -457,6 +579,7 @@ def main(argv=None):
     p_pub.add_argument("archivo")
 
     sub.add_parser("jugadores", help="lista los usuarios y su avance")
+    sub.add_parser("estaciones", help="lista las estaciones y si están colocadas")
 
     # Sin subcomando, o con --puerto suelto, arranca el servidor.
     ap.add_argument("--puerto", type=int, default=8000,
@@ -467,6 +590,8 @@ def main(argv=None):
         return cmd_publicar(args.archivo)
     if args.orden == "jugadores":
         return cmd_jugadores()
+    if args.orden == "estaciones":
+        return cmd_estaciones()
     servir(getattr(args, "puerto", 8000))
 
 
