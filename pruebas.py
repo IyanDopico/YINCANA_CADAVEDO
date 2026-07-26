@@ -740,12 +740,17 @@ def main():
 
             if len(todas) > 1:
                 pf.goto(f"{api_url}?k={todas[1][0]}")
-                pf.wait_for_timeout(5000)   # deja que el sync suba
+                pf.wait_for_timeout(5000)   # deja que el sync y el hallazgo suban
                 with contextlib.closing(servidor.conectar()) as c:
                     guardado = servidor.leer_progreso(c, "himilce")["abiertas"]
+                    hall = servidor.listar_hallazgos(c)
                 comprobar(todas[1][0] in guardado,
                           "el progreso de este móvil sube al servidor",
                           str(guardado))
+                comprobar(any(x["usuario"] == "himilce" and x["k"] == todas[1][0]
+                              for x in hall),
+                          "y el hallazgo queda registrado (quién y cuándo)",
+                          str(hall))
 
             # Admin necesita el PIN correcto
             code_malo = pf.evaluate("""async () => (await fetch('api/login',{

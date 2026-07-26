@@ -120,6 +120,12 @@ def crear_tablas(c):
             orden    INTEGER,            -- orden de juego
             colocada REAL                -- timestamp de la última captura GPS
         );
+        CREATE TABLE IF NOT EXISTS hallazgos(
+            usuario TEXT,
+            k       TEXT,                -- estación encontrada
+            cuando  REAL,
+            PRIMARY KEY(usuario, k)
+        );
         """
     )
     c.commit()
@@ -228,6 +234,24 @@ def colocar_estacion(c, k, lat, lon):
 def borrar_estacion(c, k):
     c.execute("DELETE FROM estaciones WHERE k=?", ((k or "").strip(),))
     c.commit()
+
+
+# ── Hallazgos (qué usuario encontró qué etiqueta, y cuándo) ───────────
+def marcar_hallazgo(c, usuario, k):
+    """Un jugador encontró una etiqueta. Deja constancia con fecha y lo refleja
+    en su progreso. Idempotente: encontrar dos veces no cuenta doble."""
+    k = (k or "").strip()
+    if not k:
+        raise ValueError("falta la clave 'k'")
+    c.execute("INSERT OR IGNORE INTO hallazgos(usuario, k, cuando) VALUES(?,?,?)",
+              (usuario, k, time.time()))
+    c.commit()
+    return fusionar_progreso(c, usuario, {"abiertas": [k]})
+
+
+def listar_hallazgos(c):
+    return [dict(r) for r in c.execute(
+        "SELECT usuario, k, cuando FROM hallazgos ORDER BY cuando").fetchall()]
 
 
 # Metadatos por defecto del contenido (si no se ha publicado nada). El cliente
@@ -451,6 +475,11 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 return self._json({"error": "sólo admin"}, 403)
             with closing(conectar()) as c:
                 return self._json({"estaciones": listar_estaciones(c)})
+        if ruta == "/api/hallazgos":      # panel de admin: quién encontró qué
+            if not self._es_admin():
+                return self._json({"error": "sólo admin"}, 403)
+            with closing(conectar()) as c:
+                return self._json({"hallazgos": listar_hallazgos(c)})
         if ruta == "/api/progreso":
             usuario = self._usuario()
             if not usuario:
@@ -491,6 +520,18 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 return self._json({"error": "sin sesión"}, 401)
             with closing(conectar()) as c:
                 return self._json(fusionar_progreso(c, usuario, self._cuerpo()))
+
+        if ruta == "/api/encontrado":     # un jugador encontró una etiqueta
+            if not self._origen_ok():
+                return self._json({"error": "origen no permitido"}, 403)
+            usuario = self._usuario()
+            if not usuario:
+                return self._json({"error": "sin sesión"}, 401)
+            try:
+                with closing(conectar()) as c:
+                    return self._json(marcar_hallazgo(c, usuario, (self._cuerpo() or {}).get("k")))
+            except ValueError as e:
+                return self._json({"error": str(e)}, 400)
 
         # ── provisión de estaciones (sólo admin) ──
         if ruta in ("/api/estaciones", "/api/estacion/colocar", "/api/estacion/borrar"):

@@ -163,6 +163,14 @@ class Estaciones(unittest.TestCase):
         with self.assertRaises(ValueError):
             servidor.colocar_estacion(self.c, "k1", None, None)
 
+    def test_hallazgo_marca_y_lista(self):
+        servidor.marcar_hallazgo(self.c, "himilce", "t1")
+        servidor.marcar_hallazgo(self.c, "himilce", "t1")   # idempotente
+        servidor.marcar_hallazgo(self.c, "orian", "t1")
+        h = servidor.listar_hallazgos(self.c)
+        self.assertEqual(len(h), 2)   # (himilce,t1) y (orian,t1)
+        self.assertIn("t1", servidor.leer_progreso(self.c, "himilce")["abiertas"])
+
 
 class HTTP(unittest.TestCase):
     """Arranque real en un puerto libre. Comprueba el enrutado de /api; usa la
@@ -336,6 +344,21 @@ class HTTP(unittest.TestCase):
         self.assertEqual(self.pedir("POST", "/api/estacion/colocar",
                          {"k": "x", "lat": 1, "lon": 1}, cookie=crio)[0], 403)
         self.assertEqual(self.pedir("GET", "/api/estaciones", cookie=crio)[0], 403)
+
+    def test_encontrado_y_hallazgos(self):
+        # usa 'orian' para no pisar el progreso de himilce de otros tests (la BD
+        # es compartida en esta clase).
+        _, _, ori = self.login("orian")
+        _, _, admin = self.login("admin", "1234")
+        code, _ = self.pedir("POST", "/api/encontrado", {"k": "h1"}, cookie=ori)
+        self.assertEqual(code, 200)
+        # el admin ve el hallazgo
+        _, r = self.pedir("GET", "/api/hallazgos", cookie=admin)
+        self.assertTrue(any(x["usuario"] == "orian" and x["k"] == "h1"
+                            for x in r["hallazgos"]))
+        # sin sesión no se marca; un crío no ve la lista (sólo admin)
+        self.assertEqual(self.pedir("POST", "/api/encontrado", {"k": "x"})[0], 401)
+        self.assertEqual(self.pedir("GET", "/api/hallazgos", cookie=ori)[0], 403)
 
     def test_sirve_el_estatico(self):
         code, _ = self.pedir("GET", "/index.html")

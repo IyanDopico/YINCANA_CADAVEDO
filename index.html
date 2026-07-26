@@ -62,10 +62,13 @@ header{
   color:var(--hueso); display:block; margin-top:2px; letter-spacing:.04em;
 }
 .medallero{display:flex; gap:6px; align-items:center; flex-shrink:0}
+/* Flotante y por encima de las capas (incluida la de inicio), para que el admin
+   llegue al panel de estaciones en cualquier momento. */
 #btnAdmin{
-  margin-left:10px; background:transparent; border:1px solid var(--tinta);
-  color:var(--hueso-tenue); border-radius:8px; font-size:15px;
-  width:32px; height:32px; cursor:pointer; touch-action:manipulation;
+  position:fixed; top:calc(env(safe-area-inset-top) + 8px); right:12px; z-index:80;
+  background:rgba(13,21,29,.85); border:1px solid var(--tinta);
+  color:var(--hueso-tenue); border-radius:8px; font-size:16px;
+  width:36px; height:36px; cursor:pointer; touch-action:manipulation;
 }
 #btnAdmin[hidden]{display:none}
 .punto{
@@ -636,6 +639,17 @@ function programarSync(){
 }
 window.addEventListener("online", sincronizar);
 
+/* Un jugador encontró una etiqueta: un POST explícito por hallazgo (además del
+   sync de progreso). Deja constancia con fecha en el servidor, que es lo que ve
+   el admin en el panel. Mejor-esfuerzo. */
+function marcarEncontrado(k){
+  if (!usuario || esDemo || esAutor) return;
+  fetch("api/encontrado", {
+    method:"POST", headers:{ "Content-Type":"application/json" },
+    body: JSON.stringify({ k }), keepalive:true,
+  }).catch(() => {});
+}
+
 /* Retomar en otro móvil: si este aún no tiene partida y el usuario tiene
    progreso en el servidor, lo rehidrata. Mejor-esfuerzo. */
 async function traerProgreso(){
@@ -733,11 +747,20 @@ async function mostrarPanelAdmin(resaltar){
   document.body.classList.add("autor");
   panel.hidden = false;
   panel.innerHTML = "<h2>Estaciones</h2><p class='aviso'>Cargando…</p>";
-  let lista = [];
+  let lista = [], hallazgos = [];
   try{
-    const r = await fetch("api/estaciones", { cache:"no-store" });
-    if (r.ok) lista = (await r.json()).estaciones || [];
+    const [re, rh] = await Promise.all([
+      fetch("api/estaciones", { cache:"no-store" }),
+      fetch("api/hallazgos", { cache:"no-store" }),
+    ]);
+    if (re.ok) lista = (await re.json()).estaciones || [];
+    if (rh.ok) hallazgos = (await rh.json()).hallazgos || [];
   }catch(_){}
+  const EMOJI = { himilce:"🦊", orian:"🐢", admin:"🧭" };
+  const encontraronPor = {};   // k -> [usuarios que la encontraron]
+  for (const hh of hallazgos)
+    (encontraronPor[hh.k] = encontraronPor[hh.k] || []).push(hh.usuario);
+
   panel.innerHTML = "";
   const h = document.createElement("h2"); h.textContent = "Estaciones";
   const aviso = document.createElement("p"); aviso.className = "aviso";
@@ -749,7 +772,13 @@ async function mostrarPanelAdmin(resaltar){
   const bCerrar = document.createElement("button");
   bCerrar.className = "boton hueco"; bCerrar.textContent = "Cerrar";
   fila.append(bNueva, bCerrar);
-  panel.append(h, aviso, fila);
+  // resumen: colocadas y cuántas lleva encontradas cada crío
+  const colocadas = lista.filter(e => e.lat != null).length;
+  const cuenta = u => hallazgos.filter(x => x.usuario === u).length;
+  const resumen = document.createElement("p"); resumen.className = "aviso";
+  resumen.textContent = `Colocadas ${colocadas}/${lista.length}  ·  `
+    + `🦊 Himilce ${cuenta("himilce")}  ·  🐢 Orián ${cuenta("orian")}`;
+  panel.append(h, aviso, fila, resumen);
   bCerrar.onclick = () => { panel.hidden = true; document.body.classList.remove("autor"); };
 
   bNueva.onclick = async () => {
@@ -814,7 +843,12 @@ async function mostrarPanelAdmin(resaltar){
     url.style.cssText = "flex:1 1 100%; font-size:11px; color:var(--hueso-tenue); word-break:break-all";
     url.textContent = base + "?k=" + e.k;
 
-    it.append(nombre, medalla, estado, guardar, borrar, pista, url);
+    const quien = document.createElement("div");
+    quien.style.cssText = "flex:1 1 100%; font-size:12px; color:var(--hueso-tenue)";
+    const fs = (encontraronPor[e.k] || []).map(u => (EMOJI[u] || "•") + " " + u);
+    quien.textContent = "encontrada por: " + (fs.length ? fs.join(", ") : "nadie aún");
+
+    it.append(nombre, medalla, estado, guardar, borrar, pista, url, quien);
     panel.append(it);
   }
 }
@@ -1438,7 +1472,10 @@ function pasaronPorEncima(est){
 function ponerseAlDia(est){
   const hasta = TODAS.indexOf(est);
   for (let i = 0; i < hasta; i++){
-    if (!estado.abiertas.includes(TODAS[i].k)) estado.abiertas.push(TODAS[i].k);
+    if (!estado.abiertas.includes(TODAS[i].k)){
+      estado.abiertas.push(TODAS[i].k);
+      marcarEncontrado(TODAS[i].k);   // las saltadas por las que sí pasó, también cuentan
+    }
   }
   guardar(estado);
   desbloquear(est);
@@ -1449,6 +1486,7 @@ function desbloquear(est){
   if (estado.abiertas.includes(est.k)) return;
   estado.abiertas.push(est.k);
   guardar(estado);
+  marcarEncontrado(est.k);   // POST explícito del hallazgo (deja fecha en el servidor)
   yaAvisado = false; dentroSeguidas = 0;
   celebrar(est);
 }
