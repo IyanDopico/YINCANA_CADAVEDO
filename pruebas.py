@@ -359,8 +359,9 @@ def main():
         captura("4-siguiente")
 
         if len(todas) > 1:
-            comprobar("2 DE" in pg.inner_text("#pistaTitulo").upper(),
-                      "pasa a la pista siguiente",
+            comprobar(f"TE FALTAN {len(todas)-1} DE {len(todas)}"
+                      in pg.inner_text("#pistaTitulo").upper(),
+                      "la pista pasa a contar cuántas quedan, no a numerar el orden",
                       pg.inner_text("#pistaTitulo"))
 
         # ── 5 · casos raros que van a pasar seguro ──────────────────────
@@ -374,9 +375,17 @@ def main():
         if len(todas) > 2:
             pg.goto(f"{BASE}?k={todas[2][0]}")
             pg.wait_for_timeout(600)
-            comprobar("TODAVÍA" in pg.inner_text("#logroNombre").upper(),
-                      "una etiqueta adelantada no rompe el orden",
+            nombre = pg.inner_text("#logroNombre").upper()
+            comprobar("TODAVÍA" not in nombre and "ESTA NO" not in nombre,
+                      "recolección libre: una etiqueta de otro sitio también vale",
                       pg.inner_text("#logroNombre"))
+            comprobar(pg.evaluate(
+                "JSON.parse(localStorage.getItem('yincana.v1'))"
+                ".abiertas.includes('%s')" % todas[2][0]),
+                "y queda encontrada aunque se coja fuera de orden")
+            if not pg.is_hidden("#capaLogro"):
+                pg.click("#btnSeguir")
+                pg.wait_for_timeout(300)
 
         antes = pg.evaluate(
             "JSON.parse(localStorage.getItem('yincana.v1')).abiertas.length")
@@ -461,45 +470,32 @@ def main():
         comprobar(any("borrar" in d.lower() for d in dialogos),
                   "pero antes pregunta", str(dialogos)[:70])
 
-        # ── 9 · dos móviles, dos partidas ───────────────────────────────
-        # Cada móvil lleva su localStorage. Si a uno se le pasa una etiqueta
-        # tiene que poder ponerse al día en la siguiente, o va desfasado el
-        # resto del juego sin que nadie se entere.
-        if len(todas) > 1 and pg.evaluate("CONFIG.perdonarSiPasaronCerca"):
-            print("\nDos móviles")
-
-            # Un móvil que caminó hasta la primera estación pero al que no le
-            # llegaron a acercar la etiqueta: al tocar la siguiente tiene que
-            # ponerse al día, porque su rastro demuestra que estuvo allí.
-            pg.goto(BASE)
-            pg.wait_for_timeout(400)
-            pg.click("#btnEmpezar")
-            pg.wait_for_timeout(300)
-            caminar(ctx, pg, origen, (todas[0][1], todas[0][2]))
-            pg.goto(f"{BASE}?k={todas[1][0]}")
-            pg.wait_for_timeout(800)
-            comprobar(pg.evaluate(
-                "JSON.parse(localStorage.getItem('yincana.v1')).abiertas")
-                == [todas[0][0], todas[1][0]],
-                "el móvil que se saltó una etiqueta se pone al día en la siguiente",
-                str(pg.evaluate(
-                    "JSON.parse(localStorage.getItem('yincana.v1')).abiertas")))
-            comprobar("TODAVÍA" not in pg.inner_text("#logroNombre").upper(),
-                      "y sin soltarle el aviso de que no toca",
-                      pg.inner_text("#logroNombre"))
-
-            # Y sin haber pasado por allí no se perdona: eso es una etiqueta
-            # encontrada antes de tiempo, no un despiste.
+        # ── 9 · recolección libre (la carrera) ──────────────────────────
+        # Orián por un lado, Himilce por otro: las mismas etiquetas, cada uno en
+        # el orden que se las va cruzando. Da igual por cuál se empiece; ninguna
+        # se rechaza por "no tocar todavía". Se comprueba del revés: si cogidas
+        # de la última a la primera se abren todas, no queda orden que romper.
+        if len(todas) > 1:
+            print("\nRecolección libre")
             pg.goto(f"{BASE}?reset")
             pg.wait_for_timeout(400)
-            pg.goto(f"{BASE}?k={todas[1][0]}")
-            pg.wait_for_timeout(700)
-            comprobar("TODAVÍA" in pg.inner_text("#logroNombre").upper(),
-                      "sin rastro que lo justifique se le sigue avisando",
-                      pg.inner_text("#logroNombre"))
-            comprobar(pg.evaluate(
-                "JSON.parse(localStorage.getItem('yincana.v1')).abiertas") == [],
-                "y no abre nada")
+            for k, _, _ in reversed(todas):
+                pg.goto(f"{BASE}?k={k}")
+                pg.wait_for_timeout(500)
+                comprobar("TODAVÍA" not in pg.inner_text("#logroNombre").upper(),
+                          f"la etiqueta {k} se acepta en cualquier orden",
+                          pg.inner_text("#logroNombre"))
+                if not pg.is_hidden("#capaLogro"):
+                    pg.click("#btnSeguir")
+                    pg.wait_for_timeout(200)
+                if not pg.is_hidden("#capaFinal"):
+                    pg.click("#btnFinal")
+                    pg.wait_for_timeout(200)
+            abiertas = pg.evaluate(
+                "JSON.parse(localStorage.getItem('yincana.v1')).abiertas")
+            comprobar(len(abiertas) == len(todas),
+                      "cogidas del revés, se encuentran todas igual",
+                      f"{len(abiertas)} de {len(todas)}")
 
             pg.goto(f"{BASE}?reset")
             pg.wait_for_timeout(400)

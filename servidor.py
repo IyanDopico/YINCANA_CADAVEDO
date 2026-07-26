@@ -258,7 +258,6 @@ def listar_hallazgos(c):
 # también trae su CONFIG integrado como respaldo.
 CONTENIDO_DEFECTO = {
     "pueblo": "Cadavedo", "radioNiebla": 35, "radioZona": 25, "radioAudio": 150,
-    "perdonarSiPasaronCerca": True,
     "finalTitulo": "El tesoro es vuestro",
     "finalTexto": "Habéis cruzado el pueblo de punta a punta. ¡El tesoro es vuestro!",
 }
@@ -270,7 +269,7 @@ def contenido_para_cliente(c):
     base = contenido_actual(c) or {}
     meta = dict(CONTENIDO_DEFECTO)
     for k in ("pueblo", "radioNiebla", "radioZona", "radioAudio",
-              "perdonarSiPasaronCerca", "finalTitulo", "finalTexto"):
+              "finalTitulo", "finalTexto"):
         if k in base:
             meta[k] = base[k]
     spawns = []

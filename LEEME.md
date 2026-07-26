@@ -173,9 +173,10 @@ En `CONFIG`:
 - `radioZona` (25 m) — a partir de aquí avisa de que están encima. No bajes de
   20: entre fachadas de piedra el GPS no da para más.
 - `radioAudio` (150 m) — desde dónde empieza a pitar.
-- `perdonarSiPasaronCerca` (true) — si a un móvil se le pasa una etiqueta, al
-  tocar la siguiente se pone al día, siempre que su rastro demuestre que estuvo
-  allí. Ponlo a `false` para exigir que se toquen todas en orden.
+
+La yincana es una **carrera con recolección libre**: cada uno encuentra las
+mismas etiquetas en el orden que se las cruza, así que no hay ajuste de orden ni
+de perdón. El instrumento apunta a la etiqueta sin abrir más cercana.
 
 Y en cada capítulo: `mapa`, `esquinas`, `inicioDemo` (por dónde arranca el
 muñeco de la demo), `estaciones` y, salvo en el primero, `traslado`.

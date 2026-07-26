@@ -39,7 +39,7 @@ Mismo proceso, mismo origen. Se le añaden: sesiones por cookie, CRUD de estacio
 | `sanear()` del estado de localStorage | Se amplía (rastro reproyectado a la capa Leaflet). |
 | Merge no destructivo en servidor (`fusionar_progreso`) | Igual, cambia la clave (usuario). |
 | Desbloqueo NFC por `?k=` con recarga | Igual, ahora con sesión por cookie encima. |
-| `perdonarSiPasaronCerca` (perdón por rastro) | Igual. |
+| ~~`perdonarSiPasaronCerca` (perdón por rastro)~~ | **Eliminado después:** la v2 pasó a carrera con recolección libre (cualquier orden), no hay huecos que perdonar. |
 
 ### Qué se REEMPLAZA
 | v1 | v2 |

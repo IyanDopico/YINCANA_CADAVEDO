@@ -458,16 +458,6 @@ const CONFIG = {
   radioZona:   25,   // m — a partir de aquí avisa de que están encima
   radioAudio: 150,   // m — a partir de aquí empieza a pitar
 
-  /* Cada móvil lleva su partida: los dos críos tienen que tocar cada etiqueta.
-     Si a uno se le pasa una, se queda atrás y a partir de ahí sus pistas van
-     desfasadas sin que nadie lo note.
-
-     Con esto en true, al tocar una etiqueta posterior se dan por buenas las que
-     se saltó, pero sólo si su propio rastro demuestra que pasó por encima de
-     ellas. Eso es justo lo que separa "se me olvidó tocar" de "he encontrado
-     una etiqueta de más adelante": el segundo no ha estado allí. */
-  perdonarSiPasaronCerca: true,
-
   /* Cadavedo está estirado: del apeadero a La Regalina hay casi 2 km. En un
      solo mapa cada pisada despejaría el 0,13 % y los críos caminarían un montón
      sin ver abrirse nada. Partido en dos, el casco va al 0,70 % por pisada y
@@ -577,7 +567,7 @@ function contenidoConEstaciones(c){
    de CONFIG) y recalcula los atajos. */
 function aplicarContenido(c){
   for (const k of ["pueblo","radioNiebla","radioZona","radioAudio",
-                   "perdonarSiPasaronCerca","capitulos","finalTitulo","finalTexto"])
+                   "capitulos","finalTitulo","finalTexto"])
     if (k in c) CONFIG[k] = c[k];
   derivar();
 }
@@ -1376,8 +1366,18 @@ function tintar(c, a){
 /* ══════════════════════════════════════════════════════════════
    8 · ESTACIONES Y DESBLOQUEO POR NFC
    ══════════════════════════════════════════════════════════════ */
+/* Recolección libre: es una carrera, cada uno encuentra las mismas etiquetas en
+   el orden que se las va cruzando (Orián por un lado, Himilce por otro). La
+   estación "activa" no es "la que toca" sino la más cercana sin abrir: sirve
+   sólo para que el sónar y el frío/caliente apunten a la que tienes al lado.
+   Sin señal todavía, la primera sin abrir, que algo hay que enseñar. */
 function estacionActiva(){
-  return TODAS.find(e => !estado.abiertas.includes(e.k)) || null;
+  const quedan = TODAS.filter(e => !estado.abiertas.includes(e.k));
+  if (!quedan.length) return null;
+  if (!pos) return quedan[0];
+  return quedan.reduce((a, b) =>
+    distancia(pos.lat, pos.lon, b.lat, b.lon) <
+    distancia(pos.lat, pos.lon, a.lat, a.lon) ? b : a);
 }
 
 /* El capítulo de ahora es el de la estación que toca. Terminada la yincana,
@@ -1445,8 +1445,11 @@ function mostrarPista(){
     document.getElementById("pistaTexto").textContent = CONFIG.finalTexto;
     return;
   }
+  // Carrera, no secuencia: no se dice "pista 3", sino cuántas quedan. Debajo, la
+  // pista de la más cercana sin abrir, que es adonde apunta el instrumento.
+  const quedan = TODAS.length - estado.abiertas.length;
   document.getElementById("pistaTitulo").textContent =
-    "Pista " + (TODAS.indexOf(est)+1) + " de " + TODAS.length;
+    "Te faltan " + quedan + " de " + TODAS.length;
   document.getElementById("pistaTexto").textContent = est.pista;
 }
 
@@ -1462,49 +1465,17 @@ function comprobarEtiqueta(){
   // Callarse es peor: se quedan mirando el móvil pensando que está roto.
   if (!est){
     avisoSimple("Esta no es",
-      "Esta etiqueta no es de la yincana. Seguid buscando la de la pista.");
+      "Esta etiqueta no es de la yincana. Sigue buscando las escondidas.");
     return;
   }
 
   if (estado.abiertas.includes(est.k)){
-    avisoSimple("Ya la teníais", "Esta estación ya estaba encontrada. La siguiente está en otro sitio.");
-    return;
-  }
-  const activa = estacionActiva();
-  if (activa && activa.k !== est.k){
-    const saltadas = TODAS.slice(TODAS.indexOf(activa), TODAS.indexOf(est));
-    if (CONFIG.perdonarSiPasaronCerca && saltadas.length &&
-        saltadas.every(pasaronPorEncima)){
-      ponerseAlDia(est);
-      return;
-    }
-    avisoSimple("Todavía no toca", "Habéis encontrado una etiqueta de más adelante. Guardad el sitio en la cabeza y seguid la pista de ahora.");
+    avisoSimple("Ya la tenías", "Esta etiqueta ya la habías encontrado. Quedan otras escondidas por ahí.");
     return;
   }
 
-  desbloquear(est);
-}
-
-/* ¿El rastro de ESTE móvil pasó por encima de esta estación? Con dos críos
-   caminando juntos, el que no llegó a tocar la etiqueta sí tiene la pisada
-   guardada; el que se ha topado con una de más adelante, no. */
-function pasaronPorEncima(est){
-  return estado.rastro.some(([la, lo]) =>
-    distancia(la, lo, est.lat, est.lon) <= CONFIG.radioZona * 2);
-}
-
-/* Se saltó alguna etiqueta pero estuvo allí: se le dan por buenas las de en
-   medio y se celebra la que acaba de tocar. El medallero se rellena solo, que
-   para el de 6 es lo que se ve. */
-function ponerseAlDia(est){
-  const hasta = TODAS.indexOf(est);
-  for (let i = 0; i < hasta; i++){
-    if (!estado.abiertas.includes(TODAS[i].k)){
-      estado.abiertas.push(TODAS[i].k);
-      marcarEncontrado(TODAS[i].k);   // las saltadas por las que sí pasó, también cuentan
-    }
-  }
-  guardar(estado);
+  // Recolección libre: es una carrera, cualquier etiqueta sin abrir vale en el
+  // orden que se la crucen. No hay "todavía no toca" ni etiquetas saltadas.
   desbloquear(est);
 }
 
@@ -1519,13 +1490,13 @@ function desbloquear(est){
 }
 
 function celebrar(est){
-  const siguiente = estacionActiva();
+  const quedan = TODAS.length - estado.abiertas.length;
   document.getElementById("logroMedalla").textContent = est.medalla || "⭐";
   document.getElementById("logroNombre").textContent = est.nombre;
-  // El dónde está el tesoro se guarda para la pantalla final, que es la que
-  // cierra: aquí sólo se les dice que ya no queda nada por buscar.
+  // Carrera: se les dice cuántas les quedan, no cuál es la siguiente (no hay
+  // orden). El dónde está el tesoro se guarda para la pantalla final.
   document.getElementById("logroPista").textContent =
-    siguiente ? siguiente.pista : "Ya están todas. Dadle a Seguir.";
+    quedan ? "Te quedan " + quedan + " por encontrar." : "¡Las tienes todas! Dale a Seguir.";
   document.getElementById("capaLogro").hidden = false;
 
   // En la demo nadie va a estar pulsando: se cierra sola y sigue el paseo.

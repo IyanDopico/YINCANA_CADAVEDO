@@ -5,7 +5,7 @@
    Sube el número de VERSION cada vez que edites index.html, sw.js o el vendor,
    o los móviles seguirán sirviendo la copia vieja. */
 
-const VERSION = "yincana-v12";
+const VERSION = "yincana-v13";
 
 const ARCHIVOS = [
   "./",

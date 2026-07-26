@@ -22,7 +22,7 @@ explicarle qué es Web Mercator ni qué es el RSSI.
 ## Órdenes
 
 ```bash
-python pruebas.py               # 81 comprobaciones con GPS simulado (incluye servidor)
+python pruebas.py               # 83 comprobaciones con GPS simulado (incluye servidor)
 python pruebas.py --capturas    # además deja pantallazos en capturas/
 python pruebas.py --ver         # con navegador visible, para depurar
 python pruebas_servidor.py      # pruebas del backend, sin navegador ni red
@@ -142,12 +142,21 @@ caliente y el sonido, no lee. Nada esencial puede depender de leer texto: por es
 el aviso de estar encima no es sólo el cambio de `#pistaTitulo`, sino la clase
 `body.encima`, que enciende el borde del instrumento y hace latir el número.
 
-**Cada uno toca cada etiqueta; el despiste se perdona por el rastro.** Al tocar
-una etiqueta posterior se dan por buenas las saltadas, pero sólo si el rastro de
-ese móvil pasó a menos de `radioZona * 2` de ellas (`perdonarSiPasaronCerca`).
-El rastro es lo único que distingue "se me olvidó tocar" de "he encontrado una
-de más adelante", y por eso no vale contar huecos. Con login, además, el
-progreso se retoma por usuario si cambian de móvil.
+**Es una carrera individual, con recolección libre.** Orián por un lado e
+Himilce por otro buscan **las mismas etiquetas**, cada uno en el orden que se las
+va cruzando: `comprobarEtiqueta()` acepta cualquier estación sin abrir, sin
+"todavía no toca" ni etiquetas saltadas. La "estación activa" ya no marca orden,
+es sólo la **más cercana sin abrir** (`estacionActiva()` la elige por distancia),
+para que el sónar y el frío/caliente apunten a la que tienes al lado; la pista
+cuenta cuántas quedan, no numera. Cada uno a lo suyo: en su móvil no ve el avance
+del rival —el medallero es el suyo—; quien los ve a los dos es el admin, en el
+panel de hallazgos. **No hay ganador automático**: lo canta quien vaya con ellos.
+Cada crío toca cada etiqueta (no hay sincronización entre sus móviles); con
+login, el progreso de cada uno se retoma por usuario si cambia de móvil.
+
+Esto sustituye al modelo v1 (secuencia ordenada + perdón por rastro,
+`perdonarSiPasaronCerca`), que ya no existe: en una carrera no hay huecos que
+perdonar.
 
 **El admin coloca las etiquetas escaneándolas.** Escanear `?k=` con sesión de
 admin no desbloquea: abre "Colocar etiqueta" y guarda el GPS actual como
