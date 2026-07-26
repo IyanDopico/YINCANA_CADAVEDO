@@ -130,6 +130,10 @@ class HTTP(unittest.TestCase):
         cls.tmp.close()
         cls._bd_original = servidor.BD
         servidor.BD = servidor.Path(cls.tmp.name)
+        # Caché de teselas en un directorio temporal, no en el real del repo.
+        cls.dir_cache = tempfile.mkdtemp(prefix="teselas_")
+        cls._cache_original = servidor.CACHE_TESELAS
+        servidor.CACHE_TESELAS = servidor.Path(cls.dir_cache)
         cls.srv = servidor.Servidor(("127.0.0.1", 0), servidor.Handler)
         cls.puerto = cls.srv.server_address[1]
         import threading
@@ -141,12 +145,15 @@ class HTTP(unittest.TestCase):
         cls.srv.shutdown()
         cls.srv.server_close()
         servidor.BD = cls._bd_original
+        servidor.CACHE_TESELAS = cls._cache_original
         import os
+        import shutil
         for suf in ("", "-wal", "-shm"):
             try:
                 os.unlink(cls.tmp.name + suf)
             except OSError:
                 pass
+        shutil.rmtree(cls.dir_cache, ignore_errors=True)
 
     def pedir(self, metodo, ruta, cuerpo=None):
         con = HTTPConnection("127.0.0.1", self.puerto, timeout=5)
@@ -160,6 +167,17 @@ class HTTP(unittest.TestCase):
             return r.status, (json.loads(texto) if texto else None)
         except json.JSONDecodeError:
             return r.status, texto   # respuesta no-JSON (el estático)
+
+    def pedir_bin(self, ruta):
+        """Como pedir(), pero para respuestas binarias: devuelve
+        (status, content_type, bytes)."""
+        con = HTTPConnection("127.0.0.1", self.puerto, timeout=5)
+        con.request("GET", ruta)
+        r = con.getresponse()
+        cuerpo = r.read()
+        ct = r.getheader("Content-Type")
+        con.close()
+        return r.status, ct, cuerpo
 
     def test_contenido_sin_publicar_da_404(self):
         code, _ = self.pedir("GET", "/api/contenido")
@@ -204,6 +222,57 @@ class HTTP(unittest.TestCase):
     def test_sirve_el_estatico(self):
         code, _ = self.pedir("GET", "/index.html")
         self.assertEqual(code, 200)
+
+    # ── proxy-caché de teselas ──
+    def _mock_descarga(self, datos=None, error=None):
+        """Sustituye descargar_tesela por un doble que cuenta llamadas."""
+        llamadas = {"n": 0}
+        original = servidor.descargar_tesela
+
+        def falso(url):
+            llamadas["n"] += 1
+            if error:
+                raise error
+            return datos
+
+        servidor.descargar_tesela = falso
+        self.addCleanup(lambda: setattr(servidor, "descargar_tesela", original))
+        return llamadas
+
+    def test_tesela_rango_invalido(self):
+        # z fuera de rango y coordenada fuera del mundo -> 404, sin descargar.
+        ll = self._mock_descarga(datos=b"x")
+        self.assertEqual(self.pedir_bin("/tiles/99/0/0.png")[0], 404)
+        self.assertEqual(self.pedir_bin("/tiles/15/99999999/0.png")[0], 404)
+        self.assertEqual(ll["n"], 0)
+
+    def test_tesela_descarga_y_cachea(self):
+        png = b"\x89PNG\r\n\x1a\nTESELA-DE-PRUEBA"
+        ll = self._mock_descarga(datos=png)
+        code, ct, cuerpo = self.pedir_bin("/tiles/15/16000/12000.png")
+        self.assertEqual(code, 200)
+        self.assertEqual(ct, "image/png")
+        self.assertEqual(cuerpo, png)
+        # Segunda petición: sale de disco, no vuelve a descargar.
+        code2, _, cuerpo2 = self.pedir_bin("/tiles/15/16000/12000.png")
+        self.assertEqual(code2, 200)
+        self.assertEqual(cuerpo2, png)
+        self.assertEqual(ll["n"], 1, "la segunda debería servirse de caché")
+
+    def test_tesela_404_upstream_cachea_negativo(self):
+        err = servidor.urllib.error.HTTPError(
+            "u", 404, "Not Found", hdrs=None, fp=None)
+        ll = self._mock_descarga(error=err)
+        self.assertEqual(self.pedir_bin("/tiles/15/16001/12001.png")[0], 404)
+        # Caché negativa: no se vuelve a pedir el mar/borde.
+        self.assertEqual(self.pedir_bin("/tiles/15/16001/12001.png")[0], 404)
+        self.assertEqual(ll["n"], 1)
+
+    def test_tesela_ruta_no_numerica_no_sirve(self):
+        # No casa con la regex de teselas: no debe servir nada raro (ni 200).
+        ll = self._mock_descarga(datos=b"x")
+        self.assertNotEqual(self.pedir_bin("/tiles/15/abc/1.png")[0], 200)
+        self.assertEqual(ll["n"], 0)
 
 
 if __name__ == "__main__":

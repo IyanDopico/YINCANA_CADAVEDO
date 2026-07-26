@@ -23,16 +23,42 @@ la fuente que *actualiza*, no de la que se *depende*.
 import argparse
 import http.server
 import json
+import os
+import re
 import secrets
 import socketserver
 import sqlite3
+import threading
 import time
+import urllib.error
+import urllib.request
 from contextlib import closing
 from pathlib import Path
 from urllib.parse import urlsplit, parse_qs
 
 RAIZ = Path(__file__).parent.resolve()
 BD = RAIZ / "yincana.db"
+
+# ── Proxy-caché de teselas del mapa ─────────────────────────────────────
+# El mapa vivo tira de teselas de OSM, pero el cliente sólo habla con esta
+# máquina: las servimos desde aquí y las cacheamos en disco. La política de OSM
+# obliga a un User-Agent identificable (el que pone urllib por defecto está
+# bloqueado, así que fijarlo NO es opcional) y a mostrar la atribución en el
+# mapa. Nada de descargas masivas: la caché se calienta paseando la vista.
+CACHE_TESELAS = RAIZ / "cache_teselas"
+TESELAS_UPSTREAM = os.environ.get(
+    "YINCANA_TESELAS", "https://tile.openstreetmap.org/{z}/{x}/{y}.png")
+TESELAS_UA = ("YincanaCadavedo/2.0 "
+              "(+https://yincana.iyando.qzz.io; iyan.dopico@gmail.com)")
+_TESELA_RE = re.compile(r"^/tiles/(\d+)/(\d+)/(\d+)\.png$")
+_teselas_sem = threading.Semaphore(2)   # tope de descargas simultáneas a upstream
+
+
+def descargar_tesela(url):
+    """Baja una tesela de upstream. Aislada para poder sustituirla en pruebas."""
+    req = urllib.request.Request(url, headers={"User-Agent": TESELAS_UA})
+    with urllib.request.urlopen(req, timeout=10) as r:
+        return r.read()
 
 
 # ══════════════════════════════════════════════════════════════════════
@@ -226,9 +252,54 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         if self.command != "HEAD":
             self.wfile.write(cuerpo)
 
+    # ── teselas ──
+    def _tesela(self, z, x, y):
+        # Rango razonable + coordenadas dentro del mundo. Esto acota zooms
+        # absurdos y, como la ruta se arma sólo con los enteros validados, cierra
+        # cualquier path traversal.
+        if not (12 <= z <= 19 and 0 <= x < (1 << z) and 0 <= y < (1 << z)):
+            return self.send_error(404)
+        destino = CACHE_TESELAS / str(z) / str(x) / f"{y}.png"
+        neg = destino.parent / f"{y}.png.404"     # caché negativa (mar/borde)
+        if destino.exists():
+            return self._enviar_tesela(destino.read_bytes())
+        if neg.exists():
+            return self.send_error(404)
+        url = TESELAS_UPSTREAM.format(z=z, x=x, y=y)
+        try:
+            with _teselas_sem:
+                if destino.exists():   # otra petición la trajo mientras esperábamos
+                    return self._enviar_tesela(destino.read_bytes())
+                datos = descargar_tesela(url)
+        except urllib.error.HTTPError as e:
+            if e.code == 404:
+                neg.parent.mkdir(parents=True, exist_ok=True)
+                neg.write_bytes(b"")
+                return self.send_error(404)
+            return self.send_error(502)
+        except Exception:
+            return self.send_error(504)
+        destino.parent.mkdir(parents=True, exist_ok=True)
+        tmp = destino.parent / f"{y}.png.{secrets.token_hex(4)}.tmp"
+        tmp.write_bytes(datos)
+        os.replace(tmp, destino)   # escritura atómica: nada de teselas a medias
+        self._enviar_tesela(datos)
+
+    def _enviar_tesela(self, datos):
+        self.send_response(200)
+        self.send_header("Content-Type", "image/png")
+        self.send_header("Content-Length", str(len(datos)))
+        self.send_header("Cache-Control", "public, max-age=604800")
+        self.end_headers()
+        if self.command != "HEAD":
+            self.wfile.write(datos)
+
     # ── enrutado ──
     def do_GET(self):
         ruta = urlsplit(self.path).path
+        m = _TESELA_RE.match(ruta)
+        if m:
+            return self._tesela(int(m[1]), int(m[2]), int(m[3]))
         if ruta == "/api/contenido":
             with closing(conectar()) as c:
                 obj = contenido_actual(c)

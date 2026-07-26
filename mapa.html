@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Mapa vivo · prueba F0</title>
+<link rel="stylesheet" href="vendor/leaflet/leaflet.css">
+<style>
+  html, body, #mapa { height: 100%; margin: 0; background: #0d151d; }
+</style>
+</head>
+<body>
+<!-- Página de verificación de la F0: Leaflet vendorizado + teselas servidas por
+     la propia máquina (/tiles). No es parte del juego; en la F2 el mapa vivo se
+     integra en index.html y esta página se puede quitar. -->
+<div id="mapa"></div>
+<script src="vendor/leaflet/leaflet.js"></script>
+<script>
+  const map = L.map('mapa', { zoomControl: true }).setView([43.5455, -6.3888], 16);
+  L.tileLayer('tiles/{z}/{x}/{y}.png', {
+    minZoom: 13, maxZoom: 18,
+    attribution: '© colaboradores de OpenStreetMap',
+  }).addTo(map);
+</script>
+</body>
+</html>
