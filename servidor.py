@@ -38,7 +38,10 @@ from pathlib import Path
 from urllib.parse import urlsplit, parse_qs
 
 RAIZ = Path(__file__).parent.resolve()
-BD = RAIZ / "yincana.db"
+# El estado (base de datos y caché de teselas) puede vivir fuera del código:
+# en Docker va a un volumen (YINCANA_DATOS=/datos) y el contenedor es desechable.
+DATOS = Path(os.environ.get("YINCANA_DATOS", RAIZ))
+BD = DATOS / "yincana.db"
 
 # ── Usuarios y sesiones ─────────────────────────────────────────────────
 # Tres usuarios fijos, sin registro. Los críos entran sólo con su botón; admin
@@ -56,7 +59,7 @@ DIAS_SESION = 180
 # obliga a un User-Agent identificable (el que pone urllib por defecto está
 # bloqueado, así que fijarlo NO es opcional) y a mostrar la atribución en el
 # mapa. Nada de descargas masivas: la caché se calienta paseando la vista.
-CACHE_TESELAS = RAIZ / "cache_teselas"
+CACHE_TESELAS = DATOS / "cache_teselas"
 TESELAS_UPSTREAM = os.environ.get(
     "YINCANA_TESELAS", "https://tile.openstreetmap.org/{z}/{x}/{y}.png")
 TESELAS_UA = ("YincanaCadavedo/2.0 "

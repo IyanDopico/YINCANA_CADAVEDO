@@ -1,0 +1,15 @@
+# Lo que no pinta nada dentro de la imagen: estado (va en el volumen),
+# artefactos de pruebas y el propio material de git/docker.
+.git
+.gitignore
+__pycache__
+*.pyc
+capturas
+cache_teselas
+yincana.db*
+datos
+tunel
+.env*
+Dockerfile
+compose.yml
+.dockerignore

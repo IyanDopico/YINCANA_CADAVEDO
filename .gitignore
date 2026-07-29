@@ -6,3 +6,6 @@ yincana.db
 yincana.db-wal
 yincana.db-shm
 cache_teselas/
+datos/
+.env
+tunel/credenciales.json

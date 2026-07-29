@@ -31,6 +31,7 @@ python servidor.py publicar contenido.json   # sube metadatos (pueblo, radios, s
 python servidor.py jugadores                 # usuarios y su avance
 python servidor.py estaciones                # estaciones y si están colocadas
 YINCANA_PIN=1234 python servidor.py          # con PIN de admin (en prod va en el systemd)
+docker compose up -d --build    # producción: servidor + túnel (ver DESPLIEGUE.md)
 ```
 
 **`python`, no `python3`.** En la máquina de Iyán (Windows) `python3` es el
@@ -64,7 +65,11 @@ respaldo**; el contenido de verdad lo sirve el servidor.
 - `servidor.py` — backend (stdlib + SQLite): sesiones, progreso, contenido,
   estaciones y **proxy-caché de teselas** (`/tiles/{z}/{x}/{y}.png`)
 - `contenido.json` — metadatos publicables (pueblo, radios, spawns, final)
+- `Dockerfile`, `compose.yml`, `tunel/` — despliegue recomendado (servidor +
+  túnel en contenedores; estado en `./datos/`; `.env` y `tunel/credenciales.json`
+  no se commitean)
 - `Caddyfile`, `yincana.service`, `yincana-tunnel.service` — despliegue
+  alternativo sin Docker
 - `pruebas.py` — simulador de recorrido · `pruebas_servidor.py` — backend
 - `LEEME.md`, `DEMO.md`, `DESPLIEGUE.md`, `PLAN-v2.md` — guías
 - `mapa.py`, `mapa-*.jpg` — **obsoletos** en v2 (el mapa es vivo); se conservan

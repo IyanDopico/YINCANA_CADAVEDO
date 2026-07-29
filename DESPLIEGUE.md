@@ -26,7 +26,33 @@ deep-link `?k=`) y Tailscale Funnel (no admite dominio propio).
 - CNAME **proxied** `yincana.iyando.qzz.io` → el túnel (con
   `cloudflared tunnel route dns`).
 
-## Hacerlo permanente (systemd) — REQUIERE `sudo`
+## Hacerlo permanente (Docker) — la vía recomendada
+
+Servidor + túnel en dos contenedores, con el estado fuera. No necesita `sudo`
+(si el usuario está en el grupo `docker`) y revive la yincana con un comando.
+
+```bash
+git clone git@github.com:IyanDopico/YINCANA_CADAVEDO.git && cd YINCANA_CADAVEDO
+cp .env.ejemplo .env                # y editar: el PIN real del admin
+install -m 644 ~/.cloudflared/c4e29006-*.json tunel/credenciales.json
+docker compose up -d --build        # ← esto es todo
+# comprobar: curl -s -o /dev/null -w "%{http_code}\n" https://yincana.iyando.qzz.io/
+# logs:  docker compose logs -f     # parar: docker compose down
+```
+
+Detalles que ya nos mordieron:
+- **`install -m 644`, no `cp`**: la imagen de cloudflared corre como usuario
+  no-root y con el 600 de `~/.cloudflared` no puede leer las credenciales
+  ("permission denied" en bucle en los logs).
+- El estado (partida, teselas) queda en `./datos/`: reconstruir la imagen no
+  borra nada. Copia de seguridad = copiar esa carpeta.
+- `tunel/config.yml` (en git, sin secretos) apunta a `http://yincana:8000`, el
+  nombre del servicio en la red interna de compose; `credenciales.json` y
+  `.env` están en `.gitignore` y se ponen a mano.
+- Tras actualizar el código: `git pull && docker compose up -d --build` (y
+  recuerda subir `VERSION` en `sw.js`, como siempre).
+
+## Hacerlo permanente (systemd) — alternativa sin Docker, REQUIERE `sudo`
 
 Dos servicios, los dos como usuario `iyan`: la API y el túnel.
 

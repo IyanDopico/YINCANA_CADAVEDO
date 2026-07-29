@@ -1,0 +1,32 @@
+# La yincana entera con un comando: servidor + túnel de Cloudflare.
+#
+#   cp .env.ejemplo .env                          # y poner el PIN real
+#   cp ~/.cloudflared/<uuid>.json tunel/credenciales.json
+#   docker compose up -d --build
+#
+# El estado (partida, teselas) queda en ./datos, fuera del contenedor.
+# Ver DESPLIEGUE.md para el detalle.
+
+services:
+  yincana:
+    build: .
+    restart: unless-stopped
+    environment:
+      # El PIN va en .env (que no se commitea), nunca aquí.
+      YINCANA_PIN: ${YINCANA_PIN:?falta YINCANA_PIN en .env}
+    volumes:
+      - ./datos:/datos
+    ports:
+      # Útil para probar en la LAN sin túnel; el túnel va por la red interna.
+      - "8000:8000"
+
+  tunel:
+    image: cloudflare/cloudflared:latest
+    restart: unless-stopped
+    command: tunnel --no-autoupdate --config /etc/cloudflared/config.yml run
+    volumes:
+      # config.yml está en git (no tiene secretos); credenciales.json NO:
+      # se copia a mano de ~/.cloudflared (ver DESPLIEGUE.md).
+      - ./tunel:/etc/cloudflared:ro
+    depends_on:
+      - yincana

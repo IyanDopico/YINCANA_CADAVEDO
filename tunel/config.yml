@@ -1,0 +1,12 @@
+# Config del túnel para Docker: igual que la de ~/.cloudflared pero apuntando
+# al servicio "yincana" de compose en vez de a localhost. El UUID del túnel no
+# es secreto; las credenciales sí, y por eso credenciales.json va en .gitignore
+# y se copia a mano:  cp ~/.cloudflared/<uuid>.json tunel/credenciales.json
+tunnel: c4e29006-3da6-4b95-ba6e-be5fb934f663
+credentials-file: /etc/cloudflared/credenciales.json
+
+ingress:
+  - hostname: yincana.iyando.qzz.io
+    service: http://yincana:8000
+  # catch-all obligatorio al final
+  - service: http_status:404
