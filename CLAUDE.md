@@ -22,7 +22,7 @@ explicarle qué es Web Mercator ni qué es el RSSI.
 ## Órdenes
 
 ```bash
-python pruebas.py               # 93 comprobaciones con GPS simulado (incluye servidor)
+python pruebas.py               # 97 comprobaciones con GPS simulado (incluye servidor)
 python pruebas.py --capturas    # además deja pantallazos en capturas/
 python pruebas.py --ver         # con navegador visible, para depurar
 python pruebas_servidor.py      # pruebas del backend, sin navegador ni red
@@ -175,16 +175,39 @@ confeti (`soltarConfeti()`, `<i>` con animación CSS, se limpian solos a los
 falta**. Ese es el marcador que entiende sin leer. Todo se salta con
 `prefers-reduced-motion`.
 
-**El cronómetro (`estado.comenzado`) arranca en la primera salida, no en cada
-carga.** Tocar una etiqueta recarga la página: si se reiniciara ahí, el tiempo
-final saldría siempre a cero. Pasa por `sanear()` y se muestra en el cierre
-(`tiempoDeCarrera()`), que se calla si sale un disparate (reloj movido).
+**El cronómetro mide de la primera etiqueta a la última.** `estado.comenzado`
+se arma en el primer `desbloquear()` (no en el botón de empezar: ése se pulsa
+en casa la víspera, al hacer el login) y `estado.terminado` se congela al abrir
+la última, para que re-enseñar el cierre horas después no infle el tiempo.
+Ambos pasan por `sanear()`; `tiempoDeCarrera()` se calla ante disparates (reloj
+movido). El tiempo **canónico** para comparar a los dos críos sale del panel
+del admin, calculado con las fechas de `/api/hallazgos` (primera→última):
+inmune a recargas y a cambios de móvil.
 
 **El marcador de carrera vive sólo en el panel del admin**
-(`marcadorDeCarrera()`): barras, tanteo y a qué hora encontró cada uno la
-última, con los datos de `/api/hallazgos`. En el móvil de cada crío **no puede
-aparecer el rival** —hay una comprobación en `pruebas.py` que lo vigila— y
-sigue sin haber ganador automático: lo canta quien vaya con ellos.
+(`marcadorDeCarrera()`): barras, tanteo, hora de la última y minutos de carrera
+de cada uno, con los datos de `/api/hallazgos` **filtrados por claves vigentes**
+(borrar o regrabar una etiqueta deja hallazgos huérfanos en el servidor; sin el
+filtro el tanteo canta 3/2). En el móvil de cada crío **no puede aparecer el
+rival** —hay una comprobación en `pruebas.py`, contra el servidor de verdad,
+que lo vigila— y sigue sin haber ganador automático: lo canta quien vaya con
+ellos.
+
+**Las pistas describen dónde está SU etiqueta, no la siguiente.** Con la
+carrera se invirtió la semántica: la pista que se ve es la de la estación a la
+que ya apunta el instrumento (la más cercana sin abrir), así que "id hacia los
+hórreos" estilo v1 ya no vale. Al escribir las pistas de agosto, cada una debe
+decir dónde se esconde su propia etiqueta ("pegada al banco del andén"). Las
+del `CONFIG` integrado son de ejemplo y siguen el estilo viejo: no copiarlas.
+
+**La estación activa cambia sola al caminar, y la UI la sigue.**
+`alRecibirPosicion()` vigila el cambio de `est.k`: rearma la alarma
+(`yaAvisado`/`dentroSeguidas`) y repinta pista y medallero. Sin eso, la
+fanfarria de llegada sonaba una sola vez entre escaneos y el texto describía
+una estación mientras el sónar apuntaba a otra. Al salir del radio sin cambiar
+de objetivo se restaura la pista (el "Estás encima" no se queda clavado), pero
+`yaAvisado` se conserva: entrar y salir del radio de la misma estación no
+repite la fanfarria.
 
 **El admin coloca las etiquetas escaneándolas.** Escanear `?k=` con sesión de
 admin no desbloquea: abre "Colocar etiqueta" y guarda el GPS actual como

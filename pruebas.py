@@ -282,13 +282,32 @@ def main():
                   "la distancia mostrada llega a la zona", f"marca {dist}")
         comprobar("cerca" in pg.eval_on_selector("#dist", "e=>e.className"),
                   "el número se pone en ámbar al llegar")
-        comprobar("ESTÁIS" in pg.inner_text("#pistaTitulo").upper(),
+        comprobar("ENCIMA" in pg.inner_text("#pistaTitulo").upper(),
                   "salta el aviso de estar encima",
                   pg.inner_text("#pistaTitulo"))
         # El de 6 no lee: el aviso tiene que verse sin leer nada.
         comprobar("encima" in pg.eval_on_selector("body", "e => e.className"),
                   "y el instrumento lo enseña sin depender del texto",
                   pg.eval_on_selector("body", "e => e.className"))
+
+        # ── 3b · el objetivo cambia al caminar (carrera) ─────────────────
+        # Se va sin escanear hacia otra estación: en cuanto la más cercana
+        # cambia, la alarma se rearma y la pista deja de decir "Estás encima".
+        # Sin esto, la fanfarria de llegada sólo sonaba una vez entre escaneos.
+        if len(todas) > 1:
+            lejos = (primera[1] + (todas[1][1] - primera[1]) * 0.7,
+                     primera[2] + (todas[1][2] - primera[2]) * 0.7)
+            caminar(ctx, pg, (primera[1], primera[2]), lejos)
+            comprobar(pg.evaluate("estacionActiva() && estacionActiva().k")
+                      == todas[1][0],
+                      "el instrumento pasa a apuntar a la estación más cercana",
+                      str(pg.evaluate("estacionActiva() && estacionActiva().k")))
+            comprobar(pg.evaluate("yaAvisado") is False,
+                      "y la alarma de llegada queda rearmada para la nueva")
+            comprobar("ENCIMA" not in pg.inner_text("#pistaTitulo").upper(),
+                      "y la pista deja de decir que estás encima",
+                      pg.inner_text("#pistaTitulo"))
+            caminar(ctx, pg, lejos, (primera[1], primera[2]))  # de vuelta para seguir
 
         # ── 3 · alineación niebla / mapa ────────────────────────────────
         # La niebla es un lienzo a pantalla completa que sigue al jugador: el
@@ -362,12 +381,13 @@ def main():
         papelillos = pg.eval_on_selector_all("#confeti i", "e => e.length")
         comprobar(papelillos > 0, "y cae confeti al encontrarla",
                   f"{papelillos} papelillos")
-        # El cronómetro de la carrera no puede reiniciarse en cada etiqueta: la
-        # recarga por NFC es constante y dejaría el tiempo final en cero.
+        # El cronómetro mide de la primera etiqueta a la última: se arma en el
+        # primer hallazgo (no en el botón de empezar, que se pulsa en casa la
+        # víspera al hacer el login).
         com1 = pg.evaluate(
             "JSON.parse(localStorage.getItem('yincana.v1')).comenzado")
         comprobar(isinstance(com1, (int, float)) and com1 > 0,
-                  "el cronómetro de la carrera arranca y se guarda", str(com1))
+                  "el cronómetro se arma con el primer hallazgo", str(com1))
 
         pg.click("#btnSeguir")
         pg.wait_for_timeout(600)
@@ -393,12 +413,6 @@ def main():
         comprobar(pg.evaluate("rastroLinea && rastroLinea.options.color") == "#8a6fb0",
                   "y también al rastro, que es el recuerdo que les queda",
                   str(pg.evaluate("rastroLinea && rastroLinea.options.color")))
-        com2 = pg.evaluate(
-            "JSON.parse(localStorage.getItem('yincana.v1')).comenzado")
-        comprobar(com2 == com1,
-                  "y el cronómetro no se reinicia en la recarga por etiqueta",
-                  f"{com1} -> {com2}")
-
         # ── 5 · casos raros que van a pasar seguro ──────────────────────
         print("\nCasos raros")
         pg.goto(f"{BASE}?k={primera[0]}")
@@ -406,6 +420,12 @@ def main():
         comprobar("YA" in pg.inner_text("#logroNombre").upper(),
                   "una etiqueta repetida avisa en vez de contar dos veces",
                   pg.inner_text("#logroNombre"))
+        # Esta recarga es real: el cronómetro tiene que llegar intacto al otro lado.
+        com2 = pg.evaluate(
+            "JSON.parse(localStorage.getItem('yincana.v1')).comenzado")
+        comprobar(com2 == com1,
+                  "y el cronómetro no se reinicia en la recarga por etiqueta",
+                  f"{com1} -> {com2}")
 
         if len(todas) > 2:
             pg.goto(f"{BASE}?k={todas[2][0]}")
@@ -476,6 +496,13 @@ def main():
                   "y el resumen del recorrido", pg.inner_text("#finResumen"))
         comprobar(len(pg.inner_text("#finTexto")) > 20,
                   "y dice dónde está el tesoro de verdad")
+        # El final queda congelado: re-enseñar el cierre horas después no puede
+        # inflar el tiempo de la carrera.
+        term = pg.evaluate(
+            "JSON.parse(localStorage.getItem('yincana.v1')).terminado")
+        comprobar(isinstance(term, (int, float)) and term >= com1,
+                  "el cronómetro se congela al abrir la última etiqueta",
+                  str(term))
         captura("5-final")
 
         # El premio: la niebla se disuelve entera y queda el mapa vivo a la vista.
@@ -783,6 +810,14 @@ def main():
                           "y el hallazgo queda registrado (quién y cuándo)",
                           str(hall))
 
+            # En el móvil del crío no se filtra el rival. Se comprueba AQUÍ,
+            # en la página que sí habla con el servidor de verdad (login,
+            # progreso, contenido): la única vía por la que el rival podría
+            # colarse son los datos del servidor, no el HTML estático.
+            cuerpo = pf.inner_text("body").lower()
+            comprobar("orián" not in cuerpo and "orian" not in cuerpo,
+                      "en el móvil del jugador no aparece el rival por ningún lado")
+
             # Admin necesita el PIN correcto
             code_malo = pf.evaluate("""async () => (await fetch('api/login',{
                 method:'POST', headers:{'Content-Type':'application/json'},
@@ -828,11 +863,6 @@ def main():
                       "con su nombre y cuándo encontró cada uno la última",
                       texto_carrera.replace("\n", " · ")[:80])
             ctx5.close()
-
-            # Y en el móvil del crío no se filtra el rival: cada uno a lo suyo.
-            comprobar("orián" not in pg.inner_text("body").lower()
-                      and "orian" not in pg.inner_text("body").lower(),
-                      "en el móvil del jugador no aparece el rival por ningún lado")
 
             comprobar(not err3 and not err4 and not err5,
                       "el cliente con servidor no suelta errores de JavaScript",

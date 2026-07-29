@@ -61,7 +61,11 @@ header{
   font-family:var(--serif); font-size:19px; letter-spacing:.02em;
   color:var(--hueso); display:block; margin-top:2px; letter-spacing:.04em;
 }
-.medallero{display:flex; gap:6px; align-items:center; flex-shrink:0}
+.medallero{display:flex; gap:6px; align-items:center; flex-shrink:0; flex-wrap:wrap; justify-content:flex-end}
+/* Los botones flotantes (Salir, ⚙) tapan el final del medallero si no se le
+   hace sitio: son fixed y viven justo encima de la esquina de la cabecera. */
+body.conSalir .medallero{margin-right:64px}
+body.conAdmin .medallero{margin-right:122px}
 /* Flotantes y por encima de las capas (incluida la de inicio), para llegar al
    panel y a cerrar sesión en cualquier momento. Salir a la derecha del todo;
    el ⚙ (sólo admin) a su izquierda. */
@@ -241,7 +245,9 @@ body.encima footer{
 .cuenta-gorda{display:flex; gap:11px; justify-content:center; flex-wrap:wrap; margin:0}
 .cuenta-gorda i{
   width:17px; height:17px; border-radius:50%; font-style:normal;
-  border:2px solid var(--tinta); background:transparent;
+  /* Hueso tenue, no tinta: con --tinta el contraste era 1,5:1 y "las que
+     faltan" desaparecían a pleno sol, que es donde se va a mirar esto. */
+  border:2px solid var(--hueso-tenue); background:transparent;
 }
 .cuenta-gorda i.hecho{
   background:var(--oro); border-color:var(--oro);
@@ -863,7 +869,9 @@ function provisionarEtiqueta(k){
 
 /* Cómo va la carrera. Sólo lo ve el admin: en el móvil de cada crío no aparece
    el rival, cada uno va a lo suyo. Y no canta ganador —eso lo dice quien vaya
-   con ellos—, sólo enseña el tanteo y a qué hora encontró cada uno la última. */
+   con ellos—, sólo enseña el tanteo, la hora de la última y lo que llevan de
+   carrera (primera→última, con las fechas del servidor: es el tiempo canónico,
+   inmune a recargas y a cambios de móvil). */
 function marcadorDeCarrera(hallazgos, total){
   const caja = document.createElement("div");
   caja.className = "carrera";
@@ -880,7 +888,8 @@ function marcadorDeCarrera(hallazgos, total){
 
     const barra = document.createElement("div"); barra.className = "barra-c";
     const relleno = document.createElement("i");
-    relleno.style.width = total ? Math.round(100 * suyos.length / total) + "%" : "0%";
+    relleno.style.width = total
+      ? Math.min(100, Math.round(100 * suyos.length / total)) + "%" : "0%";
     barra.appendChild(relleno);
 
     const tanteo = document.createElement("span");
@@ -891,9 +900,15 @@ function marcadorDeCarrera(hallazgos, total){
     const pie = document.createElement("p");
     pie.className = "ultima";
     const ult = suyos[suyos.length - 1];
-    pie.textContent = ult
+    let texto = ult
       ? q.nombre + " · última a las " + horaCorta(ult.cuando)
       : q.nombre + " · todavía ninguna";
+    if (suyos.length > 1 && ult.cuando && suyos[0].cuando){
+      const min = Math.round((ult.cuando - suyos[0].cuando) / 60);
+      if (min >= 1) texto += " · " + (min < 60 ? min + " min"
+        : Math.floor(min/60) + " h " + String(min%60).padStart(2,"0") + " min") + " de carrera";
+    }
+    pie.textContent = texto;
     caja.append(fila, pie);
   }
   return caja;
@@ -942,7 +957,11 @@ async function mostrarPanelAdmin(resaltar){
   const colocadas = lista.filter(e => e.lat != null).length;
   const resumen = document.createElement("p"); resumen.className = "aviso";
   resumen.textContent = `Colocadas ${colocadas} de ${lista.length}`;
-  panel.append(h, aviso, fila, resumen, marcadorDeCarrera(hallazgos, colocadas || lista.length));
+  // Sólo hallazgos de claves vivas: borrar o regrabar una etiqueta deja sus
+  // hallazgos viejos en el servidor, y sin este filtro el tanteo canta 3/2.
+  const vigentes = new Set(lista.map(e => e.k));
+  panel.append(h, aviso, fila, resumen,
+    marcadorDeCarrera(hallazgos.filter(x => vigentes.has(x.k)), colocadas || lista.length));
   bCerrar.onclick = () => { panel.hidden = true; document.body.classList.remove("autor"); };
 
   bNueva.onclick = async () => {
@@ -1038,11 +1057,13 @@ let mem = null; // respaldo si localStorage está bloqueado (previsualizaciones,
    queda en blanco al primer repintado, y ahí ya no hay yincana que salvar:
    más vale perder una pisada rara que la partida entera. */
 function sanear(e){
-  const bueno = { rastro:[], abiertas:[], capturas:[], comenzado:null };
+  const bueno = { rastro:[], abiertas:[], capturas:[], comenzado:null, terminado:null };
   if (!e || typeof e !== "object") return bueno;
-  // Cuándo arrancó la carrera, para poder decirles al final lo que tardaron.
-  // Una fecha absurda (reloj del móvil movido, guardado a medias) se descarta.
+  // Cuándo cayó la primera etiqueta y cuándo la última, para decirles al final
+  // lo que tardaron. Una fecha absurda (reloj movido, guardado a medias) se descarta.
   if (Number.isFinite(e.comenzado) && e.comenzado > 0) bueno.comenzado = e.comenzado;
+  if (Number.isFinite(e.terminado) && e.terminado >= (bueno.comenzado || 0))
+    bueno.terminado = e.terminado;
   if (Array.isArray(e.rastro))
     bueno.rastro = e.rastro.filter(p => Array.isArray(p) && p.length >= 2 &&
       Number.isFinite(p[0]) && Number.isFinite(p[1]));
@@ -1060,7 +1081,7 @@ function leer(){
   try{
     const s = localStorage.getItem(CLAVE);
     return sanear(s ? JSON.parse(s) : null);
-  }catch(e){ return mem || { rastro:[], abiertas:[], capturas:[], comenzado:null }; }
+  }catch(e){ return mem || { rastro:[], abiertas:[], capturas:[], comenzado:null, terminado:null }; }
 }
 function guardar(e){
   mem = e;
@@ -1068,13 +1089,13 @@ function guardar(e){
   programarSync();   // respaldo mejor-esfuerzo si hay token y red
 }
 
-let estado = esDemo ? { rastro:[], abiertas:[], capturas:[], comenzado:null } : leer();  // la demo siempre empieza limpia
+let estado = esDemo ? { rastro:[], abiertas:[], capturas:[], comenzado:null, terminado:null } : leer();  // la demo siempre empieza limpia
 if (params.has("reset")){
   // La niebla despejada es lo único que se llevan de recuerdo y ?reset es una
   // dirección corta que se queda en el historial: que no la borre un despiste.
   if (esDemo || confirm("¿Borrar la partida y empezar de cero?\n\n" +
                         "Se pierde todo el mapa que lleváis despejado.")){
-    estado = { rastro:[], abiertas:[], capturas:[], comenzado:null };
+    estado = { rastro:[], abiertas:[], capturas:[], comenzado:null, terminado:null };
     guardar(estado);
   }
   history.replaceState(null,"",location.pathname);
@@ -1298,6 +1319,13 @@ let distActual = null;
 let dentroSeguidas = 0;
 let sinMovimiento = true;
 let primeraVista = false;   // ya se hizo zoom a la escala de juego al coger señal
+/* En la carrera la estación activa cambia sola al caminar (es la más cercana).
+   La v1 no necesitaba vigilarlo porque sólo cambiaba al desbloquear; ahora, si
+   no se rearma la alarma y se repinta la pista al cambiar de objetivo, el
+   instrumento apunta a una estación mientras el texto describe otra y la
+   fanfarria de llegada sólo suena una vez entre escaneos. */
+let ultimaActivaK;     // clave de la activa en la última lectura
+let estabaEncima = false;
 
 const ALFA = 0.4;      // suavizado exponencial contra el temblor del GPS
 
@@ -1333,6 +1361,16 @@ function alRecibirPosicion(p){
   }
 
   const est = estacionActiva();
+
+  // Cambió el objetivo (por movimiento o por primer fix tras la recarga):
+  // rearmar la alarma, empezar de cero el contador y repintar pista y medallero
+  // para que el texto describa a donde apunta el instrumento.
+  if ((est ? est.k : null) !== ultimaActivaK){
+    ultimaActivaK = est ? est.k : null;
+    yaAvisado = false; dentroSeguidas = 0;
+    mostrarPista(); pintarMedallero();
+  }
+
   if (est){
     distActual = distancia(pos.lat, pos.lon, est.lat, est.lon);
     // Dos lecturas seguidas dentro del radio antes de dar el aviso:
@@ -1342,6 +1380,14 @@ function alRecibirPosicion(p){
       if (dentroSeguidas === 2) entrarEnZona();
     } else dentroSeguidas = 0;
   } else distActual = null;
+
+  // Al salir del radio (sin cambiar de objetivo) se recupera la pista: si no,
+  // el "Estás encima" que puso entrarEnZona() se queda clavado para siempre.
+  // yaAvisado se conserva a propósito: entrar y salir del radio de la misma
+  // estación no debe repetir la fanfarria.
+  const encimaAhora = !!(est && distActual != null && distActual <= CONFIG.radioZona);
+  if (estabaEncima && !encimaAhora) mostrarPista();
+  estabaEncima = encimaAhora;
 
   comprobarSpawns();
 
@@ -1409,9 +1455,9 @@ function entrarEnZona(){
   yaAvisado = true;
   vibrar([90,70,90,70,220]);
   [0,140,280].forEach((t,i) => setTimeout(() => pitido(880 + i*220, 130, .25), t));
-  document.getElementById("pistaTitulo").textContent = "Estáis encima";
+  document.getElementById("pistaTitulo").textContent = "Estás encima";
   document.getElementById("pistaTexto").textContent =
-    "La etiqueta está a menos de " + CONFIG.radioZona + " metros. Buscadla y acercadle el móvil.";
+    "La etiqueta está a menos de " + CONFIG.radioZona + " metros. Búscala y acércale el móvil.";
 }
 
 /* ── Spawns: puntos extra que se recogen al pasar cerca ───────────────
@@ -1653,6 +1699,12 @@ function comprobarEtiqueta(){
 function desbloquear(est){
   if (estado.abiertas.includes(est.k)) return;
   estado.abiertas.push(est.k);
+  // El cronómetro mide la carrera de verdad: de la primera etiqueta a la
+  // última. Anclarlo al botón de empezar salía mal (se pulsa en casa la víspera
+  // al hacer el login), y sin congelar el final, re-enseñar el cierre horas
+  // después inflaba el tiempo.
+  if (!estado.comenzado) estado.comenzado = Date.now();
+  if (estado.abiertas.length === TODAS.length) estado.terminado = Date.now();
   guardar(estado);
   marcarEncontrado(est.k);   // POST explícito del hallazgo (deja fecha en el servidor)
   yaAvisado = false; dentroSeguidas = 0;
@@ -1670,7 +1722,6 @@ function celebrar(est){
   pintarCuentaGorda();
   document.getElementById("capaLogro").hidden = false;
   soltarConfeti();
-  brincarAvatar();
 
   // En la demo nadie va a estar pulsando: se cierra sola y sigue el paseo.
   if (esDemo) setTimeout(seguirDespuesDelLogro, 3200);
@@ -1720,8 +1771,9 @@ function soltarConfeti(){
   }, 3200);
 }
 
-/* El bicho de la cabecera pega un salto: el medallero es pequeño y sus ojos
-   están en el instrumento de abajo, así que el aviso tiene que moverse. */
+/* El bicho de la cabecera pega un salto. Se dispara al CERRAR la medalla, no al
+   abrirla: la capa de logro es opaca y a pantalla completa, y un brinco detrás
+   de ella no lo ve nadie. */
 function brincarAvatar(){
   const el = document.getElementById("yo");
   if (el.hidden) return;
@@ -1741,6 +1793,7 @@ function fanfarria(ultima){
    quedan estaciones (siguiente pista) o se acabó (cierre). */
 function seguirDespuesDelLogro(){
   document.getElementById("capaLogro").hidden = true;
+  brincarAvatar();
   if (!estacionActiva()){ mostrarFinal(); return; }
   mostrarPista();
 }
@@ -1791,11 +1844,13 @@ function mostrarFinal(){
     setTimeout(() => pitido([660,880,1100,1320,1560][i], 220, .24), t));
 }
 
-/* Lo que tardaron, para poder comparar las dos carreras al acabar. Se calla si
-   no hay cronómetro (partida vieja) o si sale un disparate por el reloj. */
+/* Lo que tardaron de la primera etiqueta a la última, congelado en `terminado`
+   para que re-enseñar el cierre no lo infle. Se calla si no hay cronómetro
+   (partida vieja) o si sale un disparate por el reloj. */
 function tiempoDeCarrera(){
   if (!estado.comenzado) return "";
-  const min = Math.round((Date.now() - estado.comenzado) / 60000);
+  const fin = estado.terminado || Date.now();
+  const min = Math.round((fin - estado.comenzado) / 60000);
   if (min < 1 || min > 60*24) return "";
   return min < 60 ? ` · ${min} min`
                   : ` · ${Math.floor(min/60)} h ${String(min%60).padStart(2,"0")} min`;
@@ -2104,7 +2159,7 @@ function montarDemo(){
     e.target.textContent = "x" + demoVelocidad;
   };
   document.getElementById("demoOtra").onclick = () => {
-    estado = { rastro:[], abiertas:[], capturas:[], comenzado:null }; guardar(estado);
+    estado = { rastro:[], abiertas:[], capturas:[], comenzado:null, terminado:null }; guardar(estado);
     demoTramo = 0; demoT = 0; demoPausa = 0; pos = null;
     yaAvisado = false; dentroSeguidas = 0;
     document.getElementById("capaLogro").hidden = true;
@@ -2131,9 +2186,6 @@ let siguiendo = false;
 function arrancarSeguimiento(){
   if (siguiendo) return;
   siguiendo = true;
-  // El cronómetro arranca en la primera salida y no se reinicia con las recargas
-  // por etiqueta: es el tiempo de la carrera, no el de esta carga de la página.
-  if (!estado.comenzado){ estado.comenzado = Date.now(); guardar(estado); }
   document.getElementById("capaInicio").hidden = true;
   dimensionar();
   mantenerPantalla();
@@ -2191,6 +2243,7 @@ function montarJuego(){
     const bS = document.getElementById("btnSalir");
     bS.hidden = false;
     bS.onclick = () => { if (confirm("¿Cerrar sesión?")) cerrarSesion(); };
+    document.body.classList.add("conSalir");   // hace sitio al medallero
   }
   pintarQuienSoy();
   // El admin tiene el panel de estaciones y coloca etiquetas: escanear una
@@ -2198,6 +2251,7 @@ function montarJuego(){
   if (usuario === "admin"){
     const bA = document.getElementById("btnAdmin");
     bA.hidden = false;
+    document.body.classList.add("conAdmin");   // el ⚙ come más esquina que Salir
     bA.onclick = () => mostrarPanelAdmin();
     const k = params.get("k");
     if (k){ refrescarContenido(); provisionarEtiqueta(k); return; }
