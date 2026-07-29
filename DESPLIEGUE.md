@@ -33,7 +33,7 @@ Servidor + túnel en dos contenedores, con el estado fuera. No necesita `sudo`
 
 ```bash
 git clone git@github.com:IyanDopico/YINCANA_CADAVEDO.git && cd YINCANA_CADAVEDO
-cp .env.ejemplo .env                # y editar: el PIN real del admin
+cp .env.ejemplo .env                # y editar: PIN real y tu uid:gid (id -u / id -g)
 install -m 644 ~/.cloudflared/c4e29006-*.json tunel/credenciales.json
 docker compose up -d --build        # ← esto es todo
 # comprobar: curl -s -o /dev/null -w "%{http_code}\n" https://yincana.iyando.qzz.io/
@@ -41,6 +41,10 @@ docker compose up -d --build        # ← esto es todo
 ```
 
 Detalles que ya nos mordieron:
+- **`YINCANA_USER` en `.env` con TU uid:gid** (`id -u`:`id -g`): el contenedor
+  escribe `./datos` con ese usuario. Sin él asume 1000:1000, que en esta
+  máquina es `kali`, no `iyan` (plantilla del LXC), y la base de datos sale
+  con dueño ajeno.
 - **`install -m 644`, no `cp`**: la imagen de cloudflared corre como usuario
   no-root y con el 600 de `~/.cloudflared` no puede leer las credenciales
   ("permission denied" en bucle en los logs).

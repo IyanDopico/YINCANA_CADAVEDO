@@ -11,6 +11,10 @@ services:
   yincana:
     build: .
     restart: unless-stopped
+    # Como el usuario del host, no como root: si no, la base de datos y las
+    # teselas de ./datos salen propiedad de root y ni copiarlas puedes sin sudo.
+    # El uid:gid van en .env (id -u:id -g), que no siempre son 1000:1000.
+    user: "${YINCANA_USER:-1000:1000}"
     environment:
       # El PIN va en .env (que no se commitea), nunca aquí.
       YINCANA_PIN: ${YINCANA_PIN:?falta YINCANA_PIN en .env}
